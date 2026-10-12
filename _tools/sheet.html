@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>contact sheet</title>
+<style>
+  html,body{margin:0;background:#000;overflow:hidden}
+  #g{display:grid;grid-template-columns:repeat(var(--cols,4),var(--cw,400px));}
+  .cell{position:relative;width:var(--cw,400px);height:245px}
+  iframe{width:var(--cw,400px);height:225px;border:0;display:block}
+  .lab{height:20px;color:#f6be50;font:600 13px ui-monospace,Consolas,monospace;
+       line-height:20px;padding-left:4px}
+</style>
+</head>
+<body>
+<div id="g"></div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var ts = (q.get('ts') || '').split(',').filter(Boolean);
+  var cols = +(q.get('cols') || 4);
+  var cw = +(q.get('cw') || 400);
+  var root = q.get('root') || '../index.html';
+  /* ?lab=0 drops the caption strip, so the sheet is a dense grid of frames that
+     can be sliced straight back into an animation (see _tools/reel.js) */
+  var showLab = q.get('lab') !== '0';
+  var g = document.getElementById('g');
+  g.style.setProperty('--cols', cols);
+  g.style.setProperty('--cw', cw + 'px');
+  ts.forEach(function (t) {
+    var cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.style.setProperty('--cw', cw + 'px');
+    cell.style.height = (cw * 9 / 16 + (showLab ? 20 : 0)) + 'px';
+    var f = document.createElement('iframe');
+    f.style.width = cw + 'px';
+    f.style.height = (cw * 9 / 16) + 'px';
+    f.src = root + '?t=' + t + '&audio=0&ui=0';
+    cell.appendChild(f);
+    if (showLab) {
+      var lab = document.createElement('div');
+      lab.className = 'lab';
+      lab.textContent = 't = ' + t;
+      cell.appendChild(lab);
+    }
+    g.appendChild(cell);
+  });
+</script>
+</body>
+</html>

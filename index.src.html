@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>world.execute(me); — 一次修订</title>
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+<div id="wrap">
+  <canvas id="stage" width="1600" height="900"></canvas>
+
+  <div id="banner"></div>
+
+  <div id="hint">空格 播放 / 暂停    ← → 后退前进 5 秒（Shift ±1 秒）
+<b>,</b> <b>.</b> 同步偏移 ±10 ms（Shift ±1 ms）    <b>/</b> 归零
+R 重播    F 全屏    H 隐藏界面    D 调试叠层
+↑ ↓ 音量    Home / End 跳到首尾</div>
+
+  <div id="ov"></div>
+
+  <div id="ui">
+    <div class="row">
+      <button id="bPlay">▶ 播放</button>
+      <button id="bRestart">↺ 重播</button>
+      <div id="seek"><canvas id="wave" width="1200" height="26"></canvas></div>
+      <button id="bFull">⛶ 全屏</button>
+      <button id="bHide">隐藏界面</button>
+      <button id="bDebug">调试</button>
+    </div>
+    <div class="row">
+      <label>同步偏移</label>
+      <input id="off" type="range" min="-2000" max="2000" step="1" value="0">
+      <label id="offTxt">+0 ms</label>
+      <label style="margin-left:14px">音量</label>
+      <input id="vol" type="range" min="0" max="100" step="1" value="80">
+    </div>
+  </div>
+</div>
+
+<script id="lrc-source" type="text/plain"><!--LRC-EMBED--></script>
+
+<!-- the element must exist before the engine script runs: scripts execute in
+     document order, so an <audio> placed after them is still null -->
+<audio id="clip" preload="auto"></audio>
+
+<script src="assets/onsets.js"></script>
+<script src="assets/waveform.js"></script>
+<script src="assets/cues.js"></script>
+<script src="assets/personas.js"></script>
+<script src="assets/figures.js"></script>
+
+<script src="src/00_core.js"></script>
+<script src="src/01_world.js"></script>
+<script src="src/07_motion.js"></script>
+<script src="src/05_persona_grammar.js"></script>
+<script src="src/10_draw.js"></script>
+<script src="src/20_lyrics.js"></script>
+<script src="src/15_sceneapi.js"></script>
+<script src="src/30_world.js"></script>
+<script src="src/35_motifs.js"></script>
+<script src="src/36_motifs2.js"></script>
+<script src="src/40_plates.js"></script>
+<script src="src/50_selftest.js"></script>
+<script src="src/60_app.js"></script>
+</body>
+</html>
