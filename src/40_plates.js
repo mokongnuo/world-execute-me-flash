@@ -111,7 +111,7 @@
     'ab.left0':      ['scope', { win: 2, amp: 26 }],      /* the trace goes flat */
     'ab.left1':      ['hole', {}],                        /* ① a hole through the outline */
     'ab.left2':      ['emptyHand', {}],                   /* ② the hand is empty */
-    'ab.left3':      ['coolMark', {}],                    /* ③ a mark, cooling, with the real temperature */
+    'ab.left3':      ['coolMark', {}],                    /* ③ a signal dissipates after losing the connection */
     'ab.left4':      ['echoes', {}],                      /* ④ each copy weaker */
     'ab.left5':      ['undefinedVar', {}],                /* ⑤ it evaluates to undefined */
     'ab.isolation':  ['isolation', {}],
@@ -184,12 +184,13 @@
   for (var id in SCORE) {
     (function (id) {
       var e = SCORE[id], name = e[0], o = e[1] || {};
-      var fn = M[name];
+      var story = EM.storyScenes && EM.storyScenes[id];
+      var fn = story || M[name];
       if (typeof fn !== 'function') { missing.push(id + ' -> ' + name); return; }
       /* execPlate is a factory: calling it is what produces the plate */
       if (name === 'execPlate') fn = fn(o.step, o.total);
       EM.Plate(id, function (D, S) { fn(D, S, o); });
-      if (SUBJECT[name]) EM.subjectScene[id] = true;
+      if (!story && SUBJECT[name]) EM.subjectScene[id] = true;
       registered++;
     })(id);
   }

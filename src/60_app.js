@@ -39,6 +39,7 @@
   var Q = new URLSearchParams(location.search);
   var STILL = Q.has('t');
   var NOAUDIO = Q.get('audio') === '0';
+  EM.debugView = Q.get('debug') === '1';
 
   /* ---------- the render size -----------------------------------------------
      The film's geometry is written in ONE space (EM.W x EM.H, 1600 x 900) and a
@@ -165,8 +166,8 @@
     var pal = EM.palette(w);
     c.fillStyle = C.rgba(pal.bg);
     c.fillRect(0, 0, W, H);
-    c.fillStyle = C.rgba(pal.bg2, 0.55);
-    c.fillRect(0, 0, W, H * 0.42);
+    c.fillStyle = C.rgba(pal.bg2, 0.18);
+    c.fillRect(0, 0, W, H);
 
     /* ---- WHAT THE LINE HAS PASSED IS NOT DRAWN AGAIN ----------------------
        The cleanup line is a CUT, not a curtain that is lifted afterwards: while
@@ -194,19 +195,24 @@
       c.clip();
     }
     var St = EM.drawWorldLayer(D, t);          /* board, solder, nine sockets */
-    EM.drawGrammar(D, St, { cx: W / 2, cy: H / 2 - 10, R: 300 });
-    EM.drawCodeWall(D, St);                     /* the program, running: the floor */
-    EM.drawWorn(D, St);                         /* the face, in its window      */
-    EM.drawLyricImage(D, St);                   /* what the LINE asks for       */
-    EM.drawAbsence(D, St);                      /* what is missing, measured    */
+    var dramatic = EM.hasStoryScene(St);
+    if (!dramatic) {
+      EM.drawGrammar(D, St, { cx: W / 2, cy: H / 2 - 10, R: 300 });
+      EM.drawCodeWall(D, St);
+      EM.drawWorn(D, St);
+    }
+    if (!EM.storyOwnsShot(t)) EM.drawLyricImage(D, St);
     EM.drawStandingNine(D, St);                 /* the nine, while they stand   */
-    if (!gone || running) EM.drawSequence(D, t, St);   /* the shot, in its place */
-    EM.drawIdent(D, St);                        /* whose face this is, large    */
+    EM.drawExecutionMemory(D, St);
+    if ((!gone || running) && !EM.storyOwnsShot(t)) EM.drawSequence(D, t, St);
+    EM.drawStoryScene(D, St);
+    EM.drawAbsence(D, St);
+    if (!dramatic) EM.drawIdent(D, St);
     EM.drawBootChat(D, St);                     /* the opening, as a conversation */
     EM.drawTrapped(D, St);                      /* "trapped", turning in the middle */
-    EM.drawRegisters(D, St);
-    if (!gone) EM.drawLyric(D, St);             /* the lyric band               */
+    if (EM.debugView) EM.drawRegisters(D, St);
     EM.M.noteRail(D, St, EM.RAIL[St.act] || 'ticks');   /* skeleton: outside warp */
+    if (!gone) EM.drawLyric(D, St);             /* subtitles remain above the rail */
     EM.drawFrame(D, St);                        /* border, rulers, terminal     */
 
     if (cut !== null) c.restore();
@@ -315,8 +321,8 @@
       if (it && it.a > 0.01) {
         ctx.fillStyle = 'rgba(0,0,0,' + (0.86 * it.a) + ')';
         ctx.fillRect(0, 0, DW, DH);
-        var code = 'run(' + cue.scene + ')   # ' + cue.act + '   ' +
-          (cue.persona ? 'borrow ' + cue.persona : 'no face') + '   t=' + EM.C.fmtTime(t);
+        var code = { boot: 'CONNECTION', th: 'BECOMING', cd: 'DEPENDENCE',
+          fl: 'FOR YOU', ab: 'NO RESPONSE', xs: 'EXECUTION', lv: 'LOVE' }[cue.act] || '';
         ctx.globalAlpha = it.a;
         ctx.font = '600 ' + (22 * SC) + 'px ui-monospace,Consolas,monospace';
         ctx.textAlign = 'center';
@@ -453,7 +459,10 @@
     if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen();
   };
   ui.hide.onclick = function () { ui.ui.classList.toggle('hide'); ui.hint.classList.toggle('hide'); };
-  ui.debug.onclick = function () { ui.ov.classList.toggle('on'); };
+  ui.debug.onclick = function () {
+    EM.debugView = !EM.debugView;
+    ui.ov.classList.toggle('on', EM.debugView);
+  };
   ui.off.oninput = function () {
     S.offset = (+ui.off.value) / 1000;
     ui.offTxt.textContent = (S.offset >= 0 ? '+' : '') + (+ui.off.value) + ' ms';

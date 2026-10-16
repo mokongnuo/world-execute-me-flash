@@ -35,17 +35,18 @@ const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { findChrome } = require('./browser');
 
 const ROOT = path.dirname(__dirname);
 const END = 211.98367;                    /* the song, measured (see HANDOFF.md) */
-const CHROME_HINT = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 /* ffmpeg is not on PATH on this machine; these are the copies that ship inside
    other applications, and only the first one has libx264 + aac */
 const FFMPEG_HINTS = [
-  'C:\\Users\\LENOVO\\AppData\\Local\\kzip_sogou\\ffmpeg.exe',
+  process.env.FFMPEG_PATH,
+  process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'kzip_sogou', 'ffmpeg.exe'),
   'C:\\Program Files\\Tencent\\QQBrowser\\20.1.7233.400\\ffmpeg\\ffmpeg.exe',
   'C:\\Program Files\\Red Giant\\Trapcode Suite\\Tools\\ffmpeg.exe'
-];
+].filter(Boolean);
 
 /* ---------- arguments ----------------------------------------------------- */
 function parseArgs(argv) {
@@ -53,7 +54,7 @@ function parseArgs(argv) {
     from: 0, to: END, fps: 30, scale: 1, crf: 16, preset: 'medium',
     port: 9333, workers: 1, pipe: 'jpeg', probe: false, keepOpen: false,
     out: null, audio: null, decoder: null,
-    ffmpeg: null, chrome: CHROME_HINT
+    ffmpeg: null, chrome: null
   };
   for (const a of argv.slice(2)) {
     const m = /^--([a-z-]+)(?:=(.*))?$/.exec(a);
@@ -365,13 +366,14 @@ async function mainParallel(o, ff) {
 
 async function main() {
   const o = parseArgs(process.argv);
+  o.chrome = findChrome(o.chrome);
   const ff = findFfmpeg(o.ffmpeg);
   if (!ff) {
     console.error('no ffmpeg with libx264 found — pass --ffmpeg=PATH');
     process.exit(2);
   }
-  if (!fs.existsSync(o.chrome)) {
-    console.error('no chrome at ' + o.chrome + ' — pass --chrome=PATH');
+  if (!o.chrome) {
+    console.error('no Chrome or Edge found — pass --chrome=PATH or set CHROME_PATH');
     process.exit(2);
   }
   fs.mkdirSync(path.dirname(o.out), { recursive: true });
@@ -379,6 +381,7 @@ async function main() {
   console.log('film      ' + o.dw + ' x ' + o.dh + ' @ ' + o.fps + ' fps, ' +
     o.from.toFixed(3) + ' → ' + o.to.toFixed(3) + ' s');
   console.log('ffmpeg    ' + ff.version + '  (' + ff.bin + ')');
+  console.log('browser   ' + o.chrome);
 
   /* a PNG-capable ffmpeg, needed only when the encoder's own copy cannot read
      PNG (and on this machine it cannot — see hasPngDecoder) */

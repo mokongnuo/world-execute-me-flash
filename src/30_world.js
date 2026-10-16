@@ -17,7 +17,7 @@
   'use strict';
   var C = EM.C, TAU = EM.TAU;
 
-  var GAIN = 0.50;
+  var GAIN = 0.30;
 
   var PERSONS = null;
   function personas() {
@@ -159,8 +159,8 @@
     /* ground */
     c.fillStyle = C.rgba(P.bg);
     c.fillRect(0, 0, EM.W, EM.H);
-    c.fillStyle = C.rgba(P.bg2, 0.55);
-    c.fillRect(0, 0, EM.W, EM.H * 0.42);
+    c.fillStyle = C.rgba(P.bg2, 0.18);
+    c.fillRect(0, 0, EM.W, EM.H);
     D.ink += 2;
 
     /* the lattice of pads: the board's own grid, always present */
@@ -250,7 +250,7 @@
       var age = S.t - J1.t;
       var heat = Math.exp(-age / 6.5);
       var r = 2.4 + 3.0 * (J1.vel / 127) + 1.1 * (J1.voices - 1);
-      D.ball(J1.x, J1.y, r, heat * (0.35 + 0.65 * br), P.pad);
+      D.ball(J1.x, J1.y, r, heat * (0.35 + 0.65 * br) * 0.42, P.pad);
     }
     S.jointsLive = live;
     S.jointsTotal = J.length;
@@ -482,16 +482,15 @@
     return byKey(p.id + '#blink', EM.img && EM.img['girlblink-' + p.id], p.rgb, false);
   }
 
-  /* Six places a borrowed face may stand. Which one a line gets is a function
-     of that line's index, so over the film the face walks around the frame
-     instead of parking in the middle of it. Between lines the anchor is a
-     weighted average built from the SAME raised-cosine windows that fade the
-     face in and out, so she relocates while she is invisible — never as a jump
-     the eye can catch. */
+  /* Each persona keeps one of six stable anchors across adjacent lines.
+     Neighboring persona windows blend their anchors during the transition. */
   var SLOTS = [
-    [470, 322], [1132, 322], [520, 664], [1090, 664], [900, 232], [706, 692]
+    [440, 410], [1160, 410], [430, 475], [1170, 475], [1140, 405], [460, 465]
   ];
-  function slotFor(c) { return SLOTS[c.i % SLOTS.length]; }
+  function slotFor(c) {
+    var ix = EM.PERSONAS.map(function (p) { return p.id; }).indexOf(c.persona);
+    return SLOTS[(ix < 0 ? c.i : ix) % SLOTS.length];
+  }
   function faceAnchorAt(t) {
     var L = EM.Lyrics, i = L.indexAt(t), sx = 0, sy = 0, sw = 0, side = 1;
     for (var k = i - 1; k <= i + 1; k++) {
@@ -513,31 +512,9 @@
     if (presence <= 0.01) return;
     var w = S.world, P = palette(w), c = D.ctx;
     var p = S.worn;
-    /* ======================================================================
-       THE SUBJECT.
-
-       She is not an icon placed on a board; she is the thing being filmed, and
-       the first variable of a filmed subject is not position — it is SCALE.
-
-         base       how large she is in this movement of the song: small while
-                    the machine is only a machine, filling the frame once the
-                    world turns warm
-         punch      every note-on strikes her. Hard notes move her further, and
-                    the note's PITCH picks the axis, so a low note widens her
-                    and a high note lengthens her
-         dolly      a slow push or pull across the line, direction taken from
-                    how disordered the world is
-         repeat     同一张脸出现多次不许一样 — the occurrence index moves the
-                    scale, so GPT at 0:29 and GPT at 1:54 are two different
-                    shots of the same borrowed face
-         overreach  at "if I'm the only God" she is pushed past the frame and
-                    only a part of her survives — the one moment the film needs
-                    that pressure
-
-       Then ENT: four gestures chosen by how far this face may bend the board.
-       curve 0 slams in off the side; a middling face opens like a tube warming
-       up; a curved face rises with a little overshoot. Exit is the same.
-       ====================================================================== */
+    /* One principal figure. Musical velocity, pulse, repetition and world state
+       change its scale; the soft limit keeps the whole figure above subtitles.
+       Persona grammar supplies the entrance gesture, not additional clones. */
     var cvb = EM.curveOf(p.id);
     var base = 0.60 + 0.78 * (w.warm * 0.42 + w.love * 0.58);
     /* Every note-on strikes her: the STRIKE is the decaying pulse, and the
@@ -553,39 +530,18 @@
       Math.max(1, EM.MIDI.pitchHi - EM.MIDI.pitchLo), 0, 1);
     var dolly = 1 + (w.chaos - 0.45) * 0.30 * (S.t - S.cue.t) / Math.max(0.6, S.dur);
     var rep = 1 + (S.repeat % 3) * 0.13;
-    var overreach = (S.scene === 'fl.god') ? 1.85 : 1;
-    var scale = C.clamp(base * punch * dolly * rep * overreach, 0.22, 3.4);
+    var overreach = (S.scene === 'fl.god') ? 1.20 : 1;
+    var rawScale = base * punch * dolly * rep * overreach;
+    // A soft limit keeps musical variation while preserving the subtitle area.
+    var scale = 0.80 + 0.72 * rawScale / (1 + rawScale);
     S.subjectScale = scale;      /* published so the verifier can read it */
     var bw = 258, bh = 340, hw = bw / 2, hh = bh / 2;
 
-    /* ---- SHE IS IN THE MIDDLE, AND SHE IS NOT ALONE -------------------------
-       The ident at the centre hands the mark over to her, so the subject of the
-       line stands in the middle of the stage now rather than walking the six
-       sockets. The sockets become the stations of her CLONES, and there are two
-       or three of her in every line that wears a face: the same drawing at the
-       same instant, at different places — nearest the middle is largest and
-       brightest, and each step out is smaller and fainter.
-
-       This is the one rule that keeps a frame from becoming a wallpaper of her:
-       the copies are CLONES, not trails. They share the motion field, the breath
-       and the blink exactly, so they read as one thing instantiated twice; the
-       only place in the film where they lag behind her is the five "You have
-       left" lines, where the lag IS the subject. */
-    var nShots = 2 + (C.hash01(S.cue.i, 907) < 0.45 ? 1 : 0);
-    /* the principal walks the six sockets again — pinning the SUBJECT to the
-       middle was a consequence of the handover that I had backwards. What is
-       nailed to the middle is the ident's instance, not the subject. */
+    /* Only the principal speaks; diminishing afterimages are drawn later
+       for the repeated "You have left" lines. */
+    /* The figure stays at its persona's stable composition anchor. */
     var anc = faceAnchorAt(S.t);
-    /* ---- THE HANDOVER'S CLOCK ----------------------------------------------
-       The ident turns its mark into an instance of her in the middle, and that
-       instance KEEPS the ident's size for the whole line: it is the one place
-       the film is allowed to make her monumental. So the subject system runs the
-       same clock the ident runs — it draws her there, ramping in exactly as the
-       mark turns away, and never settles down to the composition's scale. */
-    var hLife = C.clamp(0.95 + S.dur * 0.5, 1.05, 1.95);
-    var hAge = S.t - (S.cue.t - 0.30);
-    var hv = hAge < 0 ? 0
-      : C.smooth(C.clamp((hAge / hLife - 0.36) / 0.34, 0, 1));
+    /* Entrance and exit use the persona presence window. */
     var ent = 1 - presence;
     var ex = 0, ey = 0, rot = 0, sy2 = 1, sx2 = 1;
     if (cvb < 0.08) {                      /* slam in off the side            */
@@ -649,7 +605,7 @@
     var cxp = anc[0] + (np - 0.5) * 22 * (1 - cvb * 0.5) + ex;
     var cyp = anc[1] + ey + C.sym(S.index, 233) * 6 + 1.6 * brth - 5 * hop;
     var x = cxp - hw, y = cyp - hh;
-    var a = (0.50 + 0.34 * (1 - w.chaos) * w.breath) * presence;
+    var a = (0.66 + 0.26 * (1 - w.chaos) * w.breath) * presence;
 
     c.save();
     c.translate(cxp, cyp);
@@ -806,40 +762,7 @@
     c.restore();
     D.ink += 4;
 
-    /* THE MIDDLE ONE — the mark's own instance, at the ident's size, for the
-       whole line. It arrives by the handover: it ramps in as the mark rotates
-       away, and it stays monumental. Everything else in the frame is arranged
-       around a thing that size, which is the point of an ident. */
-    if (hv > 0.01 && cv) {
-      var gsc = 0.95 + 0.81 * hv;                 /* 600 px at the ident's peak */
-      var gw = dw * gsc, gh = dh * gsc;
-      c.save();
-      c.translate(EM.W / 2, EM.H / 2 - 10);
-      c.rotate((1 - hv) * -0.5);
-      c.translate(-EM.W / 2, -(EM.H / 2 - 10));
-      putFace(cv, EM.W / 2 - gw / 2, (EM.H / 2 - 10) + 175 - gh,
-        gw, gh, a * hv * 0.95, slice, true);
-      c.restore();
-    }
-
-    /* and the rest of her: the same face, the same instant, standing further out,
-       each one smaller and fainter than the one inside it. Drawn with the
-       principal's transform already released, so their stations are the sockets
-       and not a scaled copy of the middle. */
-    for (var qc = 2; qc < nShots; qc++) {
-      var slc = SLOTS[(S.cue.i + qc * 2) % SLOTS.length];
-      var ux = (slc[0] - EM.W / 2) / (EM.W / 2);
-      var uy = (slc[1] - (EM.H / 2 - 10)) / (EM.H / 2);
-      var dist = Math.min(1, Math.sqrt(ux * ux + uy * uy));
-      var csc = 0.60 - 0.20 * dist;
-      var cac = a * (0.52 - 0.28 * dist) * presence;
-      if (cac < 0.02) continue;
-      var ccx = cxp + (slc[0] - EM.W / 2) * 0.84;
-      var ccy = cyp + (slc[1] - (EM.H / 2 - 10)) * 0.84;
-      var cdw = dw * csc, cdh = dh * csc;
-      putFace(cv, ccx - cdw / 2, ccy + hh * csc - cdh + (1 - presence) * 26 * csc,
-        cdw, cdh, cac, slice, true);
-    }
+    // One speaking figure per line; echoes are reserved for "You have left".
 
     /* --- geometric frame: brackets, not a plain box ----------------------- */
     D.rect(x, y, bw, bh, p.rgb, 1, (0.30 + 0.3 * S.world.breath) * presence);
@@ -850,7 +773,7 @@
       D.line(cx2, cy2, cx2 + sx2 * L1, cy2, p.rgb, 2, presence);
       D.line(cx2, cy2, cx2, cy2 + sy2 * L1, p.rgb, 2, presence);
     }
-    /* a tick ruler down one edge, in real seconds, so the window is measured */
+    /* Decorative ticks measure the frame's geometry, not elapsed seconds. */
     for (var q3 = 0; q3 <= 8; q3++) {
       var ty = y + bh * q3 / 8;
       D.line(x + bw, ty, x + bw + (q3 % 2 ? 5 : 10), ty, P.silk, 1, presence * 0.5);
@@ -865,9 +788,10 @@
       D.via(sp[0], sp[1], 5, p.rgb, presence * 0.8);
     }
     /* and to the register bank, because the numbers beside her are hers */
-    D.dash(x, y + bh * 0.5, 236, 300, P.dim, 1, [4, 7], presence * 0.35);
+    if (EM.debugView) D.dash(x, y + bh * 0.5, 236, 300, P.dim, 1, [4, 7], presence * 0.35);
 
-    /* --- terminal block --------------------------------------------------- */
+    /* --- optional authoring diagnostics ---------------------------------- */
+    if (EM.debugView) {
     var txc = anc[2] < 0 ? x + bw + 30 : x - 268;
     var ty0 = y + 26;
     D.rect(txc - 10, ty0 - 22, 248, 148, P.dim, 1, presence * 0.42);
@@ -885,8 +809,9 @@
     /* the cursor blinks off the clock, not off a timer, so a seek restores it */
     if (Math.floor(S.t * 2) % 2 === 0) D.fillRect(txc, ty0 + rows.length * 21, 8, 12, p.rgb, presence * 0.9);
     if (law) D.mono('“' + law + '”', txc, ty0 + 138, 11, p.rgb, 'left', presence * 0.7);
+    }
 
-    D.mono(p.cn + ' · ' + p.en, x + bw / 2, y - 12, 12, p.rgb, 'center', 0.9 * presence);
+    D.mono(p.cn, x + bw / 2, y - 12, 17, p.rgb, 'center', 0.9 * presence);
   }
 
   /* ---------- the register bank: every number traceable ---------- */
@@ -942,7 +867,8 @@
     c.save();
     c.beginPath(); c.rect(0, 0, EM.W, EM.H); c.clip();
     var inner = EM.drawWorldLayer(D, rt);
-    EM.drawSequence(D, rt, inner);
+    if (!EM.storyOwnsShot || !EM.storyOwnsShot(rt)) EM.drawSequence(D, rt, inner);
+    EM.drawBootChat(D, inner);
     c.restore();
     c.restore();
     D.ink++;
@@ -1004,7 +930,7 @@
   var CODE_ANY = [
     function (S) { return 't = ' + C.fmtTime(S.t) + ';'; },
     function (S) { return 'joints = ' + (S.jointsLive === undefined ? 0 : S.jointsLive) + ' / ' + EM.ONSETS.length + ';'; },
-    function (S) { return 'struct = ' + S.world.struct.toFixed(3) + ';  // d = ' + (-0.003 * S.world.struct).toFixed(4); },
+    function (S) { return 'struct = ' + S.world.struct.toFixed(3) + ';'; },
     function (S) { return 'chaos = ' + S.world.chaos.toFixed(3) + ';'; },
     function (S) { return 'beat = ' + (S.beat + 1) + ' / ' + S.K.count + ';'; },
     function (S) { return 'sounding = { pitch: ' + S.pitch + ', vel: ' + S.velocity + ' };'; },
@@ -1380,11 +1306,11 @@
     c2.fillStyle = eg;
     c2.fillRect(0, 0, fx + 10, EM.H);
     var eg2 = c2.createLinearGradient(fx - PURGE_EDGE, 0, fx + 10, 0);
-    eg2.addColorStop(0, C.rgba(P.bg2, 0.55));
-    eg2.addColorStop(0.55, C.rgba(P.bg2, 0.54));
+    eg2.addColorStop(0, C.rgba(P.bg2, 0.18));
+    eg2.addColorStop(0.55, C.rgba(P.bg2, 0.175));
     eg2.addColorStop(1, C.rgba(P.bg2, 0));
     c2.fillStyle = eg2;
-    c2.fillRect(0, 0, fx + 10, EM.H * 0.42);
+    c2.fillRect(0, 0, fx + 10, EM.H);
     c2.restore();
     D.ink += 2;
 
@@ -1409,23 +1335,9 @@
     }, PURGE_LO - 0.2, PURGE_HI, 64, 1, true);
   };
 
-  /* --------------------------------------------------------------------------
-     THE IDENT.
-
-     The borrowed mark is drawn in the sockets at 44 px, where it is a texture
-     and not a mark: nine of them, turning, and you cannot tell one from another.
-     So every time the film puts a face on, it runs an IDENT for that face — the
-     mark at the centre of the stage, as large as the frame will take it, built
-     the way a station ident is built: it settles in from a tilt, a ring closes
-     around it, one tick of the ring lands per note that is PLAYED while it is up,
-     a sweep goes round once, the name types on underneath, and the whole thing
-     lifts off. Big is the point: this is the one place the film names whose face
-     it is borrowing, and a borrowed name whispered is not attribution.
-
-     Additive like everything else, so the plate is seen THROUGH it rather than
-     behind it, and a pure function of t like everything else, so a seek puts the
-     same frame of the ident back.
-     -------------------------------------------------------------------------- */
+  /* A short mark-and-ring pulse identifies the borrowed persona at its socket.
+     It never covers the principal figure or owns another copy of that figure.
+     Names remain on the figure and line-up; detailed attribution is in README. */
   EM.drawIdent = function (D, S) {
     if (!S.worn || !S.cue) return;
     var pres = personaPresence(S.t);
@@ -1435,27 +1347,21 @@
     if (!mc) return;
     var t0 = S.cue.t - 0.30;
     var age = S.t - t0;
-    var life = C.clamp(0.95 + S.dur * 0.5, 1.05, 1.95);
+    var life = C.clamp(0.45 + S.dur * 0.12, 0.50, 0.85);
     if (age < 0 || age > life) return;
     var k = age / life;
     var e = C.smooth(C.clamp(age / 0.22, 0, 1)) * C.smooth(C.clamp((life - age) / 0.40, 0, 1));
     if (e < 0.02) return;
 
-    var P = palette(S.world), cx = EM.W / 2, cy = EM.H / 2 - 10;
-    var a = (0.62 + 0.30 * S.world.breath) * e * pres;
-    /* two thirds of the frame when it is up, and it grows the last fifth of the
-       ident so that leaving looks like rising */
-    var side = C.lerp(190, 600, C.smooth(C.clamp(k / 0.34, 0, 1))) *
+    var socket = shelfPos(EM.PERSONAS.indexOf(p));
+    var P = palette(S.world), cx = socket[0], cy = socket[1];
+    var a = (0.40 + 0.20 * S.world.breath) * e * pres;
+    /* A small mark grows at the socket, then hands the emphasis to the figure. */
+    var side = C.lerp(54, 100, C.smooth(C.clamp(k / 0.34, 0, 1))) *
                (1 + 0.16 * C.smooth(C.clamp((k - 0.62) / 0.38, 0, 1)));
     var tilt = 0.34 * (1 - C.smooth(C.clamp(k / 0.42, 0, 1))) +
                0.10 * Math.sin(S.t * 0.9) * (1 - k);
-    /* ---- THE HANDOVER ------------------------------------------------------
-       The mark does not fade out; it TURNS INTO her. Past the middle of the
-       ident it starts to turn, and while it turns she is drawn underneath it,
-       growing, so what the eye reads is the mark resolving into the face — and
-       then the mark is simply no longer drawn, because the ident is over. What
-       is left in the middle of the stage is her, which is the point of showing
-       a borrowed face at all. */
+    /* The socket mark rotates and fades as the principal figure arrives. */
     var hv = C.smooth(C.clamp((k - 0.36) / 0.34, 0, 1));      /* handover      */
     var markA = (1 - hv) * a;
     var c = D.ctx;
@@ -1469,13 +1375,10 @@
       c.restore();
       D.ink += 2;
     }
-    /* SHE IS NOT DRAWN HERE. The ident owns the mark and the ring; the middle
-       instance of her belongs to the subject system, which is already drawing it
-       on the same clock (see the handover block in drawWorn). Two systems drawing
-       the same figure on two different clocks is how a handover jumps. */
+    /* This layer owns only the mark and ring. drawWorn owns the figure. */
 
     /* the ring closes on it, and the ring is struck: one tick per note played */
-    var R = C.lerp(452, 336, C.smooth(C.clamp(k / 0.5, 0, 1)));
+    var R = C.lerp(82, 64, C.smooth(C.clamp(k / 0.5, 0, 1)));
     D.circle(cx, cy, R, P.paper, 1.4, a * 0.75);
     D.circle(cx, cy, R + 15, P.dim, 1, a * 0.45);
     var hits = S.K.notesBetween(t0, S.t);
@@ -1490,12 +1393,6 @@
       -Math.PI / 2 + C.clamp(k / 0.74, 0, 1) * EM.TAU, P.trace, 1.8, a * 0.7);
 
     /* the name, and the film's own honesty about whose it is */
-    D.mono(p.cn + ' · ' + p.en, cx, cy + R + 52, 22, P.paper, 'center', a * 0.95);
-    D.mono('borrowed mark · ' + (EM.traitOf ? EM.traitOf(p.id) : '') +
-      ' · curve ' + (EM.curveOf ? EM.curveOf(p.id).toFixed(2) : '--'),
-      cx, cy + R + 78, 13, P.trace, 'center', a * 0.8);
-    D.mono('#' + (S.index + 1) + ' / ' + EM.Lyrics.count, cx, cy - R - 34, 13,
-      P.dim, 'center', a * 0.8);
   };
 
   EM.drawCodeWall = function (D, S) {
@@ -1506,16 +1403,11 @@
        the wall vanish exactly where it was needed. Disorder moves the wall
        sideways instead — which is a far better use for it than fading out. */
     var a = (0.145 + 0.05 * w.struct) * w.breath;
-    /* Raised twice on request. The second raise is not more of the same: the
-       main ink moved from dim grey to a half-mix toward the machine's cyan,
-       because grey text stays grey however bright you make it, and the breathing
-       no longer halves the wall at the bottom of its cycle — it modulates it.
-       The wall still breathes, which is the film's whole anti-fatigue rule, but
-       it never gets to disappear. */
-    a = (0.37 + 0.07 * w.struct) * (0.74 + 0.26 * w.breath);
+    /* Dim code is a moving backdrop; portraits carry the interlude. */
+    a = (0.045 + 0.02 * w.struct) * (0.78 + 0.22 * w.breath);
     var inkCool = C.mix(P.dim, P.trace, 0.58);
     var inkHot = C.mix(P.trace, P.paper, 0.40);
-    var LH = 13, SIZE = 10;
+    var LH = 27, SIZE = 12;
     /* The wall changes GEAR with the movement of the passage — the same four
        movements the suite cuts between — because one kind of rain for thirteen
        seconds is the same emptiness in a busier costume. Code arrives as
@@ -1538,9 +1430,9 @@
       /* STREAMS: rows of code sliding sideways, each at its own speed, in both
          directions — a tape room. The rows are long and tiled, so the screen is
          filled edge to edge however the tape is offset. */
-      var ROWS = Math.ceil(EM.H / 15) + 1;
+      var ROWS = Math.ceil(EM.H / LH) + 1;
       for (r = 0; r < ROWS; r++) {
-        var y = 14 + r * 15;
+        var y = 14 + r * LH;
         var dir = C.hash01(r, 833) < 0.5 ? 1 : -1;
         var sp = 26 + 40 * C.hash01(r, 837);
         var txt = line(r, 3) + '   ' + line(r + 40, 5) + '   ';
@@ -1554,12 +1446,12 @@
     } else if (mv === 2) {
       /* THE SLANT: it falls, but every column is also being pushed, and the push
          grows with depth — the whole wall leans like weather. */
-      var C2 = 12;
+      var C2 = 4;
       for (c = 0; c < C2; c++) {
         var sp2 = 20 + 34 * C.hash01(c, 841);
         var base2 = Math.floor(S.t * sp2 / LH);
         var frac2 = S.t * sp2 - base2 * LH;
-        var bx = 26 + c * 132;
+        var bx = 26 + c * 395;
         for (r = -1; r < Math.ceil(EM.H / LH) + 2; r++) {
           var y2 = EM.H + LH - r * LH + frac2;
           var lean2 = C.sym(c, 843) * 90 * w.chaos * (1 - (EM.H - y2) / EM.H) +
@@ -1571,12 +1463,12 @@
     } else if (mv === 3) {
       /* RISE: the same columns, entered from the floor and travelling up, with
          the drift reversed — the machine printing what it has already done. */
-      var C3 = 9;
+      var C3 = 4;
       for (c = 0; c < C3; c++) {
         var sp3 = 18 + 30 * C.hash01(c, 847);
         var base3 = Math.floor(S.t * sp3 / LH);
         var frac3 = S.t * sp3 - base3 * LH;
-        var x3 = 60 + c * 176 + C.sym(c * 5, 823) * 34 * w.chaos;
+        var x3 = 60 + c * 395 + C.sym(c * 5, 823) * 34 * w.chaos;
         for (r = -1; r < Math.ceil(EM.H / LH) + 2; r++) {
           var y3 = -LH + r * LH - frac3;
           D.mono(line(base3 + r, c), x3, y3, SIZE,
@@ -1586,11 +1478,11 @@
     } else {
       /* RAIN: columns falling, each at its own speed, the whole wall drifting
          with the world's disorder. */
-      var COLS = 10;
+      var COLS = 4;
       for (c = 0; c < COLS; c++) {
         var speed = 15 + 26 * C.hash01(c, 811);
         var drift = C.sym(c * 3, 823) * 30 * w.chaos;
-        var x = 40 + c * 158 + drift;
+        var x = 40 + c * 395 + drift;
         var scrolled = S.t * speed;
         var base = Math.floor(scrolled / LH);
         var frac = scrolled - base * LH;
@@ -1701,7 +1593,7 @@
       D.circle(ax, y + 13, 11, ink, 1.2, a * 0.55);
       D.pad(ax, y + 13, 6, ink, a * 0.75);
     }
-    var bw = flight ? 64 : D.width(cue.text, 19) + 30;
+    var bw = flight ? 64 : D.width(cue.text, 23) + 30;
     var bx = you ? ax - 16 - bw : ax + 16;
     if (flight) {
       D.rect(bx, y, bw, 28, ink, 1, a * 0.26);
@@ -1712,8 +1604,8 @@
     } else {
       D.rect(bx, y, bw, 28, ink, 1, a * 0.42);
       D.pad(you ? bx + bw : bx, y + 27, 4, ink, a * 0.5);
-      if (you) D.text(cue.text, bx + 15, y + 20, 19, ink, 'left', a * 0.88);
-      else D.mono(cue.text, bx + 15, y + 20, 18, ink, 'left', a * 0.88);
+      if (you) D.text(cue.text, bx + 15, y + 22, 23, ink, 'left', a * 0.94);
+      else D.mono(cue.text, bx + 15, y + 22, 22, ink, 'left', a * 0.94);
     }
   }
 
@@ -1729,16 +1621,17 @@
     /* the page: the register panel's own width off her side, the note rail's
        ceiling below. Nothing scrolls — the opening's eleven lines fit on one
        page, which is the only reason the film can honestly show all of it. */
-    var X0 = 360, X1 = 1300, Y0 = 84, Y1 = 660, RH = 42, TOP = Y0 + 56;
+    var X0 = 240, X1 = 1360, Y0 = 84, Y1 = 704, RH = 46, TOP = Y0 + 72;
     var log = chatLog(t);
+    D.fillRect(X0, Y0, X1 - X0, Y1 - Y0, P.bg2, a * 0.96);
     D.rect(X0, Y0, X1 - X0, Y1 - Y0, P.dim, 1.2, a * 0.7);
     D.pad(X0, Y0, 7, P.dim, a * 0.8);
     D.pad(X1, Y0, 7, P.dim, a * 0.8);
     D.pad(X0, Y1, 7, P.dim, a * 0.8);
     D.pad(X1, Y1, 7, P.dim, a * 0.8);
     D.line(X0, Y0 + 38, X1, Y0 + 38, P.dim, 1, a * 0.5);
-    D.mono('> you', X0 + 16, Y0 + 25, 14, P.paper, 'left', a * 0.75);
-    D.mono('world.execute(me);', X0 + 92, Y0 + 25, 14, P.trace, 'left', a * 0.7);
+    D.mono('YOU / AI', X0 + 16, Y0 + 25, 17, P.paper, 'left', a * 0.90);
+    D.mono('world.execute(me);', X0 + 140, Y0 + 25, 16, P.trace, 'left', a * 0.85);
     var cnt = 'messages ' + log.rows.length + ' / ' + log.total;
     D.mono(cnt, X1 - 16, Y0 + 25, 13, P.silk, 'right', a * 0.8);
     D.disc(X1 - 26 - D.width(cnt, 13), Y0 + 21, 3 + 3 * w.breath, P.trace,
@@ -1776,44 +1669,7 @@
     c.restore();
   };
 
-  /* --------------------------------------------------------------------------
-     THE BOARD BECOMES THE THING.
-
-     "If I'm an eggplant … If I'm a tomato … If I'm a tabby cat … If I'm the only
-     god": four offers, and each one names a THING. A panel of numbers cannot
-     answer a line like that — the machine would be changing the subject, which
-     is the mistake this whole layer exists to stop.
-
-     So the machine draws the thing WITH ITS OWN BOARD. The lattice of 21 x 13
-     pads IS this machine's resolution: a shape is a pattern of pads, and the
-     board lights the ones that fall inside it. Nothing is pasted over the
-     picture — the substrate becomes the animal, which is the only kind of
-     picture this film is allowed to make, and rule 3 survives: a shape made of
-     pads has no curves, and in this film a curve means something has left the
-     layout.
-
-       #  a lit pad      -  a pad holding back (the tabby's stripes)      .  out
-
-     The panel is a SECOND, FINER lattice bolted to the board (26 px cells against
-     the board's own 76 x 55): the board's pitch cannot draw a cat's ears with,
-     and a shape nobody can read is not a shape. Same language — little copper
-     pads with bright rims — one order of magnitude more resolution, which is
-     what a machine that wants to show you a picture would actually do.
-
-     And the metal is not the board's. An offer is spoken by a borrowed face, the
-     faces carry their own colour (p.rgb — the same number the portrait is tinted
-     with and the same one the frame blooms with while the line is up), and that
-     is what the panel is drawn in: deepseek's blue eggplant, doubao's pink cat,
-     GLM's teal god. The tomato comes out in the eggplant's blue because one face
-     offers both — but nothing comes out gold merely because everything else is.
-     Only the outline and the tabby's stripes take the metal; the middle stays the
-     board's own dim copper, so the thing still stands on the board it is made of.
-
-     The shape ASSEMBLES from the ground up over the line that names it, then
-     stands for the rest of the offer — "then I will give you my nutrients" keeps
-     the eggplant standing — and it acts out the verb of the second half: a thing
-     that GIVES streams what it has off to the right, and a cat that PURRS shakes
-     at 25 Hz, which is the frequency the purr plate measures. */
+  /* The cat's purr displacement follows MIDI phase and pulse. */
   var SHAPES = {
     eggplant: [
       '........###.........',
@@ -1953,7 +1809,8 @@
         var k = C.clamp(pg * total - n + 1.4, 0, 1);
         if (k <= 0) continue;
         var x = X0 + c * CELL + CELL / 2, y = Y0 + r * CELL + CELL / 2;
-        if (purr) x += C.sym(r * 7 + Math.floor(S.t * 25), 733) * 2.6;
+        if (purr) x += Math.sin(S.K.notePhase(S.t) * TAU * 3 + r * 0.7) *
+          (1.4 + 3.4 * S.beatPulse);
         /* WHAT IS DRAWN IS THE OUTLINE. A filled silhouette at this size is a
            blob: the pads merge and the eye is left with a rounded rectangle. The
            contour of the thing — the pads with an empty neighbour — reads as the
@@ -1980,124 +1837,131 @@
     }
   }
 
-  /* --------------------------------------------------------------------------
-     THE ABSENCE, READ OUT.
-
-     From 117.27 (ISOLATION) to 125.71 the song has eight lines and NOT ONE of
-     them borrows a face: the machine is talking with nobody's face on, and that
-     is why the shot looks empty. So the emptiness is not filled in here — it is
-     MEASURED, which is what this film does with everything else: an empty window
-     where she would have been standing, and the two numbers that say why it is
-     empty, in the same breath as `JOINTS 611 / 615` and `LOVE —— no test exists`.
-
-     And on the lines that say "If I can …", the POINTLESS FRAGMENTS are shown as
-     what they are in this film's own bookkeeping: the 34 lines that get sung more
-     than once (repeat > 0 in the running order, counted here, never written
-     down). They are bracketed, they are counted, and the key that would delete
-     them is NEVER PRESSED — the song says "if I can", so nothing may happen. The
-     shot has to stay a question. */
-  var ABS = null;
-  function absenceCounts() {
-    if (ABS) return ABS;
-    var cs = EM.Lyrics.cues, faces = 0, frags = [], i, j;
-    for (var i = 0; i < cs.length; i++) {
-      if (cs[i].persona) faces++;
-    }
-    /* THE POINTLESS FRAGMENTS are the notes the song never puts a word on: 615
-       onsets, 131 lines — everything else is what "if I can erase all the
-       pointless fragments" is about. */
-    var ons = EM.ONSETS || [];
-    for (i = 0; i < ons.length; i++) {
-      var near = false;
-      for (j = 0; j < cs.length; j++) {
-        if (Math.abs(cs[j].t - ons[i][0] / 1000) < 0.09) { near = true; break; }
-      }
-      if (!near) frags.push(ons[i]);
-    }
-    ABS = { faces: faces, frags: frags, lines: cs.length };
-    return ABS;
+  /* The missing response is the same conversation as the opening. Its broken
+     bubbles become memories; their count is an art choice, never a MIDI claim.
+     All positions and entrances are reconstructed from t, including seeks. */
+  function cueWindow(first, last) {
+    var a = EM.Lyrics.byScene[first], b = EM.Lyrics.byScene[last];
+    return a && b ? [a.t, b.end] : null;
   }
-
-  /* --------------------------------------------------------------------------
-     TRAPPED, TURNING.
-
-     "Though we are trapped / We are trapped ah": the word is the cell, so it is
-     put in the MIDDLE of the frame and turned — and neither its rate nor its size
-     is the clock's own: BOTH ARE THE PERFORMANCE'S. The angle is the number of
-     notes played so far times a fixed angle per note, plus the phase inside the
-     note being played, so it spins up where the music is dense and nearly stops
-     where it thins, and it keeps turning between the two lines instead of
-     restarting. The size is struck by each note and decays with the pulse, so the
-     cell breathes with the song. It is all still a pure function of t.
-
-     The square around it does not turn. The plate underneath is still drawing the
-     diagram of the trap; this is the trap itself, and the readout says what the
-     spin is made of. */
-  EM.drawTrapped = function (D, S) {
-    var text = S.text || '';
-    if (!/trapped/i.test(text) || !S.cue) return;
-    var P = palette(S.world);
-    var d = C.smooth(C.clamp((S.t - S.cue.t) / 0.55, 0, 1)) *
-            C.smooth(C.clamp((S.cue.end - S.t) / 0.55, 0, 1));
-    if (d < 0.02) return;
-    var a = (0.50 * S.world.breath + 0.38) * d;
-    var cx = EM.W / 2, cy = EM.H / 2 - 10;
-    var c = D.ctx;
-    D.rect(cx - 134, cy - 134, 268, 268, P.dim, 1, a * 0.5);
-    c.save();
-    c.translate(cx, cy);
-    var notes = S.K.countFrom(0, S.t), ph = S.K.notePhase(S.t);
-    var strike = S.beatPulse;
-    var size = 34 + 26 * strike + 12 * (S.velocity / 127);
-    c.rotate(notes * 0.36 + ph * 1.15);
-    D.mono('TRAPPED', 0, size * 0.34, size, P.alarm, 'center', a * (0.55 + 0.45 * strike));
-    c.restore();
-    D.mono(Math.round(notes) + ' notes   ' + (0.36 * 57.29578).toFixed(0) +
-      '° per note   phase ' + ph.toFixed(2), cx, cy + 162, 13, P.silk, 'center', a * 0.8);
-    D.mono('the cell does not turn', cx, cy + 184, 12, P.dim, 'center', a * 0.7);
+  function trappedWindow(t) {
+    var cs = EM.Lyrics.cues, i = EM.Lyrics.indexAt(t);
+    if (!cs[i] || !/trapped/i.test(cs[i].text)) return null;
+    var lo = i, hi = i;
+    while (lo > 0 && /trapped/i.test(cs[lo - 1].text)) lo--;
+    while (hi + 1 < cs.length && /trapped/i.test(cs[hi + 1].text)) hi++;
+    return [cs[lo].t, cs[hi].end];
+  }
+  EM.fragmentState = function (t) {
+    var win = cueWindow('ab.isolation', 'ab.dishearten');
+    if (!win || t < win[0] || t >= win[1]) return null;
+    var rise = C.smooth(C.clamp((t - win[0]) / 3.1, 0, 1));
+    return { window: win, count: Math.round(576 * rise),
+      fade: C.smooth(C.clamp((win[1] - t) / 0.50, 0, 1)) };
   };
-
-  EM.drawAbsence = function (D, S) {
-    var t = S.t, text = S.text || '';
-    var asking = /^if i can/i.test(text);
-    if (S.act !== 'ab' && !asking) return;
-    var P = palette(S.world), a = 0.42 * S.world.breath + 0.24;
-    var cnt = absenceCounts();
-    var cx = EM.W / 2, cy = EM.H / 2 - 10;
-
-    /* the window she would have been standing in: the frame is still there */
-    var bw = 258, bh = 340;
-    D.rect(cx - bw / 2, cy - bh / 2, bw, bh, P.dim, 1, a * 0.5);
-    D.mono('nobody is wearing this one', cx - bw / 2 + 10, cy - bh / 2 + 20, 12,
-      P.dim, 'left', a * 0.8);
-    D.mono('worn now           ' + (S.persona ? 1 : 0) + ' / 9',
-      cx - bw / 2, cy + bh / 2 + 26, 13, P.silk, 'left', a * 0.85);
-    D.mono('lines with a face  ' + cnt.faces + ' / ' + cnt.lines,
-      cx - bw / 2, cy + bh / 2 + 48, 13, P.silk, 'left', a * 0.85);
-
-    if (!asking) return;
-    /* They are laid out by their own two readings — when they were played and
-       how high — so the field of them IS the part of the performance that
-       carries no words. They come in with the sentence's own progress, so by
-       "…the pointless fragments" the frame is nothing else; on "Then maybe"
-       they are gone, because the condition was never met. */
-    var prog = C.smooth(C.clamp((t - S.cue.t) / Math.max(0.4, S.cue.dur * 0.86), 0, 1));
-    var show = Math.round(cnt.frags.length * prog);
-    var lo = EM.MIDI.pitchLo, span = Math.max(1, EM.MIDI.pitchHi - lo);
-    for (var i = 0; i < show; i++) {
-      var o1 = cnt.frags[i];
-      var fx = 80 + (o1[0] / 1000 / EM.AUDIO_END) * (EM.W - 160);
-      var fy = 116 + (1 - (o1[1] - lo) / span) * (EM.H - 300);
-      var w2 = 9 + 8 * C.hash01(i, 1721), h2 = 6 + 6 * C.hash01(i, 1723);
-      D.rect(fx, fy, w2, h2, C.mix(P.trace, P.alarm, C.hash01(i, 1727) * 0.5), 1, a * 0.8);
+  EM.storyOwnsShot = function (t) {
+    var cue = EM.Lyrics.at(t);
+    return t < CHAT_END + 0.54 || !!EM.fragmentState(t) || !!trappedWindow(t) ||
+      !!(cue && EM.storyScenes && EM.storyScenes[cue.scene]);
+  };
+  // A stratified layout keeps the chant spread out. The permutation fills
+  // distant cells first, and a new word never moves any previously placed word.
+  EM.executionPlacement = function (i, final) {
+    var cols = final ? 7 : 4, rows = final ? 12 : 4;
+    var cells = cols * rows, slot = (i * (final ? 31 : 7) + (final ? 0 : 10)) % cells;
+    var pass = Math.floor(i / cells);
+    var x = final ? 116 + (slot % cols) * 228 : 204 + (slot % cols) * 397;
+    var y = final ? 58 + Math.floor(slot / cols) * 70 : 140 + Math.floor(slot / cols) * 162;
+    return { x: x + C.sym(i, 1451) * (final ? 12 : 10),
+      y: y + C.sym(i, 1453) * (final ? 9 : 8),
+      size: final ? 26 + 10 * C.hash01(i, 1457) + pass * 6
+                  : 42 + 12 * C.hash01(i, 1457),
+      angle: C.sym(i, 1459) * (final ? 0.08 : 0.055) };
+  };
+  EM.trappedMotion = function (t) {
+    var K = EM.clock;
+    return { angle: (K.countFrom(0, t) + K.notePhase(t)) * 0.52,
+      size: 70 + 34 * K.pulse(t, 0.3, 0.075) + 14 * K.velocityAt(t) / 127 };
+  };
+  EM.drawTrapped = function (D, S) {
+    if (EM.hasStoryScene && EM.hasStoryScene(S)) return;
+    var win = trappedWindow(S.t);
+    if (!win) return;
+    var P = palette(S.world), c = D.ctx;
+    // One envelope for both adjacent lines: the cage never disappears at their seam.
+    var a = C.smooth(C.clamp((S.t - win[0]) / 0.24, 0, 1)) *
+      C.smooth(C.clamp((win[1] - S.t) / 0.30, 0, 1));
+    var cx = EM.W / 2, cy = 414, motion = EM.trappedMotion(S.t);
+    var p = C.clamp((S.t - win[0]) / (win[1] - win[0]), 0, 1);
+    var R = 272 - 30 * C.smooth(p);
+    D.fillRect(cx - R, cy - R, R * 2, R * 2, P.bg, a * 0.60);
+    D.rect(cx - R, cy - R, R * 2, R * 2, P.alarm, 1.5, a * 0.48);
+    for (var i = 0; i < 8; i++) {
+      var v = (i + 0.5) / 8, x = cx - R + v * R * 2;
+      D.line(x, cy - R, x, cy - R + 28 + 24 * S.beatPulse, P.alarm, 2, a * 0.65);
+      D.line(x, cy + R, x, cy + R - 28 - 24 * S.beatPulse, P.alarm, 2, a * 0.65);
     }
-    D.mono('fragments  ' + show + ' / ' + cnt.frags.length + '  selected',
-      cx, EM.H - 218, 13, P.trace, 'center', a * 0.9);
-    /* the key: it blinks, and it does not go down */
-    var kx = cx + 250, ky = EM.H - 266, lit = (t * 2 % 1) < 0.5;
-    D.rect(kx - 32, ky - 15, 64, 30, P.alarm, 1.2, a * (lit ? 0.9 : 0.3));
-    D.mono('DELETE', kx, ky + 5, 13, P.alarm, 'center', a * (lit ? 0.9 : 0.3));
-    D.mono('not pressed', kx, ky + 32, 12, P.silk, 'center', a * 0.8);
+    D.arc(cx, cy, R + 28, -Math.PI / 2, -Math.PI / 2 + p * TAU,
+      P.paper, 2, a * 0.65);
+    c.save(); c.translate(cx, cy); c.rotate(motion.angle);
+    D.mono('TRAPPED', 0, motion.size * 0.32, motion.size, P.alarm, 'center', a);
+    c.restore();
+  };
+  EM.drawAbsence = function (D, S) {
+    if (EM.hasStoryScene && EM.hasStoryScene(S)) return;
+    var lost = cueWindow('ab.left0', 'ab.dishearten');
+    if (!lost || S.t < lost[0] || S.t >= lost[1]) return;
+    var P = palette(S.world), t = S.t, c = D.ctx;
+    var frag = EM.fragmentState(t);
+    var silence = C.smooth(C.clamp((t - lost[0]) / 1.5, 0, 1));
+    if (!frag) {
+      // The small typing bubble survives while the connection itself breaks.
+      var x = 1208, y = 518;
+      D.fillRect(x - 98, y - 72, 196, 136, P.bg2, silence * 0.92);
+      D.rect(x - 98, y - 72, 196, 136, P.dim, 1, silence * 0.72);
+      D.mono('YOU', x, y - 40, 16, P.paper, 'center', silence * 0.60);
+      D.dash(EM.W / 2 + 65, y, x - 98, y, P.dim, 1.3, [8, 12], silence * 0.5);
+      for (var q = 0; q < 3; q++)
+        D.disc(x - 18 + q * 18, y, 3, P.dim, silence * 0.35);
+      D.mono('NO RESPONSE', x, y + 42, 14, P.alarm, 'center', silence * 0.82);
+      return;
+    }
+    var a = frag.fade, local = t - frag.window[0];
+    var pool = EM.Lyrics.cues.filter(function (cue) {
+      return cue.t < lost[0] && cue.text.charAt(0) !== '(' && cue.text.length > 8;
+    });
+    // Permuted cells distribute even the earliest shards across the whole screen.
+    for (var i = 0; i < frag.count; i++) {
+      var slot = (i * 197) % 576, col = slot % 32, row = Math.floor(slot / 32);
+      var x1 = 35 + col * 49.2 + C.sym(i, 1711) * 11;
+      var y1 = 62 + row * 37.4 + C.sym(i, 1713) * 8;
+      x1 += Math.sin(local * (0.3 + C.hash01(i, 1715)) + i) * 9;
+      y1 += Math.cos(local * 0.45 + i * 1.7) * 6 + S.beatPulse * C.sym(i, 1717) * 4;
+      var fw = 10 + 33 * C.hash01(i, 1721), fh = 7 + 20 * C.hash01(i, 1723);
+      var ink = C.mix(P.trace, P.paper, C.hash01(i, 1727) * 0.75);
+      ink = C.mix(ink, P.alarm, C.clamp((local - 3.5) / 5, 0, 0.3));
+      var alpha = a * (0.26 + 0.44 * C.hash01(i, 1729));
+      c.save(); c.translate(x1, y1);
+      c.rotate(C.sym(i, 1731) * 0.9 + local * C.sym(i, 1733) * 0.04);
+      var pts = [[-fw / 2, -fh / 2], [fw * 0.40, -fh * 0.34],
+        [fw / 2, fh / 2], [-fw * 0.36, fh * 0.28]];
+      D.fillPoly(pts, ink, alpha * 0.17);
+      D.poly(pts, ink, 1.1, alpha, true);
+      if (i % 19 === 0 && pool.length) {
+        var old = pool[i % pool.length].text, at = Math.floor(C.hash01(i, 1735) * (old.length - 4));
+        D.mono(old.slice(at, at + 3), 0, 4, 10, ink, 'center', alpha * 0.75);
+      } else D.line(-fw * 0.32, 0, fw * 0.15, 0, ink, 1, alpha * 0.6);
+      c.restore();
+    }
+    // A readable empty conversation sits inside the memories, not a data counter.
+    var cx = EM.W / 2, cy = 398;
+    D.fillRect(cx - 175, cy - 80, 350, 160, P.bg, a * 0.92);
+    D.rect(cx - 175, cy - 80, 350, 160, P.dim, 1.3, a * 0.8);
+    D.mono('YOU', cx, cy - 42, 18, P.paper, 'center', a * 0.68);
+    D.mono('NO RESPONSE', cx, cy + 12, 25, P.alarm, 'center', a * 0.9);
+    var press = /erase|fragments/i.test(S.text || '');
+    D.rect(cx - 42, cy + 40, 84, 26, P.dim, 1, a * 0.65);
+    D.mono('DELETE?', cx, cy + 58, 13, press ? P.alarm : P.dim, 'center', a * 0.85);
   };
 
   EM.drawLyricImage = function (D, S) {
@@ -2236,58 +2100,47 @@
       D.line(cx, cy - 26, cx, cy + 26, P.love, 1, a * 0.5);
     }
   };
-  /* --------------------------------------------------------------------------
-     THE LYRIC BAND.
-
-     First discipline: a line of lyrics appears ONCE in the picture. If the
-     plate already has that word as its subject — the big-word plates, the
-     hand-drawn one, the countdown — the band withdraws and leaves only its
-     progress line. Two copies of the same sentence in one frame weaken each
-     other, and this is the rule that gets broken first when a film is busy.
-
-     Second: the band is a terminal, not a subtitle. Monospace, brackets, a
-     caret, and the same one-character-per-note typewriter as the rest of the
-     film, so the character you are hearing is the character being struck.
-
-     Third: the progress line is drawn even when the text is withheld, because
-     the progress line is the only part that can never be a lie.
-     ------------------------------------------------------------------------- */
+  /* Complete English cue text with optional Chinese editorial translation.
+     Subject plates own their English keyword; only the Chinese subtitle remains
+     in that case. Both languages inherit the original cue clock. The backing
+     keeps the text above the musical rail and the fragment field. */
   EM.drawLyric = function (D, S) {
     var P = palette(S.world);
     var text = S.text || '';
     var a = 0.82 * S.world.breath + 0.18;
-    var cx = EM.W / 2, y = EM.H - 130, wd = 460;
+    var cx = EM.W / 2, y = EM.H - 150, wd = 460;
 
     /* the progress line */
-    D.line(cx - wd / 2, y + 16, cx + wd / 2, y + 16, P.dim, 1, 0.30 * a);
-    D.line(cx - wd / 2, y + 16, cx - wd / 2 + wd * S.line, P.trace, 1.8, 0.95 * a);
+    D.line(cx - wd / 2, y + 52, cx + wd / 2, y + 52, P.dim, 1, 0.30 * a);
+    D.line(cx - wd / 2, y + 52, cx - wd / 2 + wd * S.line, y + 52, P.trace, 1.8, 0.95 * a);
     for (var k = 0; k <= 10; k++) {
       var tx = cx - wd / 2 + wd * k / 10;
-      D.line(tx, y + 16, tx, y + 16 + (k % 5 ? 4 : 8), P.dim, 1, 0.35 * a);
+      D.line(tx, y + 52, tx, y + 52 + (k % 5 ? 4 : 8), P.dim, 1, 0.35 * a);
     }
 
-    /* the record: what has already been sung, fading off to the left. It is the
-       same thing as the solder on the board, written instead of burned. */
-    var prev = EM.Lyrics.cues, shownN = 0;
-    for (var i = S.index - 1; i >= 0 && shownN < 7; i--) {
-      var c0 = prev[i];
-      if (!c0 || !c0.text || c0.held) continue;
-      var age = (S.t - c0.end) / 26;
-      if (age > 1) break;
-      shownN++;
-      D.mono(c0.text.toUpperCase(), 62, EM.H - 300 + shownN * 22, 10,
-        P.dim, 'left', 0.30 * a * (1 - age) * (1 - shownN / 9));
-    }
-
-    if (EM.subjectScene && EM.subjectScene[S.scene]) return;   /* it is already the picture */
     if (!text) return;
-    var shown = EM.MO.typedByNotes(text, S.t, S.cue.t, S.p);
+    if (text.charAt(0) === '(') return;
+    var cn = EM.LYRIC_CN && EM.LYRIC_CN[S.scene];
+    var subject = (EM.subjectScene && EM.subjectScene[S.scene] && !EM.storyOwnsShot(S.t)) ||
+      (EM.storySubject && EM.storySubject[S.scene]);
+    if (subject) {
+      if (cn) {
+        var cw = D.width(cn, 26) + 44;
+        D.fillRect(cx - cw / 2, y + 3, cw, 44, P.bg, 0.94);
+        D.text(cn, cx, y + 34, 26, P.paper, 'center', 0.96);
+      }
+      return;
+    }
+    // Complete subtitles are readable even when a short cue has only one note.
+    var shown = text;
     var loud = /[A-Z]/.test(text) && text === text.toUpperCase();
-    var size = loud ? 28 : 21;
+    var size = loud ? 32 : 28;
     var col = loud ? P.pad : P.trace;
     var line = '[  ' + shown + '  ]';
-    D.mono(line, cx, y - 4, size, col, 'center', a);
-    EM.MO.caret(D, line, cx - D.width(line, size) / 2, y - 4, size, col, a, S.t);
+    var bandWidth = Math.min(EM.W - 100, D.width(line, size) + 48);
+    D.fillRect(cx - bandWidth / 2, y - 38, bandWidth, cn ? 86 : 49, P.bg, 0.94);
+    D.mono(line, cx, y - 4, size, col, 'center', 0.95);
+    if (cn) D.text(cn, cx, y + 34, 24, P.paper, 'center', 0.96);
   };
   /* --------------------------------------------------------------------------
      THE FRAME.
@@ -2321,13 +2174,8 @@
       D.line(EM.W - m, y, EM.W - m - len2, y, P.dim, 1, a * 0.5);
     }
     /* terminal strip */
-    var px = EM.W / 2 - 300, py = EM.H - 58;
-    var pct = Math.round(S.line * 100);
-    var line = '> ' + (S.scene || 'idle') + '  --line ' + pct + '%  --beat ' +
-      (S.beat + 1) + '/' + S.K.count + '  --' + (S.persona ? 'wearing ' + S.persona : 'bare');
-    D.mono(line, px, py, 12, P.trace, 'left', 0.72);
-    if (Math.floor(S.t * 2.5) % 2 === 0) D.fillRect(px + D.width(line, 12) + 6, py - 11, 8, 13, P.trace, 0.8);
-    D.mono(S.act ? 'ACT ' + S.act.toUpperCase() : '', EM.W / 2, 52, 11, P.silk, 'center', a * 0.9);
+    D.fillRect(44, EM.H - 65, 205, 24, P.bg, 0.82);
+    D.mono('Mili / world.execute(me);', 54, EM.H - 48, 13, P.silk, 'left', 0.50);
   };
   EM.personaCueIndex = personaCueIndex;
   EM.personaPresence = personaPresence;
@@ -2369,6 +2217,7 @@
     return S;
   };
   EM.drawWorn = drawWorn;
+  EM.faceCanvas = faceCanvas;
   EM.drawRegisters = drawRegisters;
   EM.drawReplay = drawReplay;
   EM.GAIN = GAIN;

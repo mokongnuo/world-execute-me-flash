@@ -1,11 +1,13 @@
-# 别人的东西:不随仓库分发(见 README「版权与归属」)
-# 音频 / 歌词 / MIDI,以及由它们生成的一切
+# Third-party inputs and derivative build output (see README)
 original/
 assets/
 index.html
 
-# 本地产物
+# Local output and tool caches
 dist/
 _old_frames/
 _keepframes/
+node_modules/
+__pycache__/
+*.py[cod]
 *.log

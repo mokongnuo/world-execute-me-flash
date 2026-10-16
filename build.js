@@ -19,6 +19,16 @@ step(1, 'MIDI / MP3 / LRC  ->  assets/');
 const r = spawnSync(process.execPath, [path.join(ROOT, '_build', 'gen.js')], { stdio: 'inherit' });
 if (r.status !== 0) { console.error('\nFAILED: _build/gen.js'); process.exit(r.status || 1); }
 
+// Translations inherit the existing cues. Derivative lyrics stay with local inputs.
+const translationPath = path.join(ROOT, 'original', 'translation.json');
+const translation = fs.existsSync(translationPath)
+  ? JSON.parse(fs.readFileSync(translationPath, 'utf8')) : {};
+if (!translation || typeof translation !== 'object' || Array.isArray(translation) ||
+    Object.values(translation).some(value => typeof value !== 'string'))
+  throw Error('original/translation.json must map scene ids to strings');
+fs.writeFileSync(path.join(ROOT, 'assets', 'translation.js'),
+  'window.EM = window.EM || {};\nEM.LYRIC_CN = ' + JSON.stringify(translation, null, 2) + ';\n');
+
 step(2, 'inject the lyric text into index.html (the second, verbatim copy)');
 const html = fs.readFileSync(path.join(ROOT, 'index.src.html'), 'utf8');
 const text = fs.readFileSync(path.join(ROOT, 'assets', 'lrc-embed.txt'), 'utf8').replace(/\s+$/, '');
@@ -51,6 +61,11 @@ for (let i = 1; i < A.CUES.length; i++) {
 }
 const seen = Object.create(null);
 for (const c of A.CUES) { if (seen[c[2]]) problems.push('scene id used twice: ' + c[2]); seen[c[2]] = true; }
+for (const key of Object.keys(translation))
+  if (!seen[key]) problems.push('translation names an unknown scene: ' + key);
+if (Object.keys(translation).length) for (const c of A.CUES)
+  if (c[1] && !c[1].startsWith('(') && !translation[c[2]])
+    problems.push('translation missing for ' + c[2]);
 
 /* the embedded copy in index.html must match the generated table */
 const built = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');

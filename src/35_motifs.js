@@ -37,7 +37,8 @@
        warp, so a second copy from inside would sit a few pixels off the
        engine's unwarped one and the whole panel would ghost on every note.
        The engine draws it once, outside the warp. */
-    if (o.noWord) return;
+    // The lyric band owns subtitles; duplicated terminal captions are debug-only.
+    if (o.noWord || !EM.debugView) return;
     var word = o.w || S.text;
     if (!word) return;
     /* ENTRANCE: typed, with a caret, and slid in from the side it belongs to */
@@ -81,7 +82,7 @@
       }
     }
     /* the count is real, and so is the span it covers */
-    D.mono(n + ' notes / 6 s', x0, y + 20, 10, P.silk, 'left', a0 * 3);
+    if (EM.debugView) D.mono(n + ' notes / 6 s', x0, y + 20, 10, P.silk, 'left', a0 * 3);
   }
 
   /* ---------- the workhorse: a word drawn as a subject, not a caption ------
@@ -90,25 +91,23 @@
   function bigWord(D, S, o) {
     var P = pal(S), w = S.world;
     var str = (o && o.w) || S.text;
-    var size = (o && o.size) || 92;
+    var size = ((o && o.size) || 92) * (1 + 0.035 * S.beatPulse * S.velocity / 127);
     var cx = EM.W / 2, cy = EM.H / 2 - 10;
     var punch = (o && o.punch) || 0;      /* 0..1 : how hard it has been struck */
     var cols = (o && o.tint) || P.trace;
     var a = 0.55 + 0.45 * S.world.breath;
-    /* ENTRANCE: the word is typed out, and it slides in from the left while it
-       types, so the line arrives rather than appearing. It also leaves the same
-       way, because phases() is symmetric. */
+    /* A complete word slides into place. Musical impact drives the stroke and
+       size; a short cue never needs extra notes to finish its spelling. */
     var ph = EM.MO.phases(S.p);
-    var shown = EM.MO.typedByNotes(str, S.t, S.cue.t, S.p);
+    var shown = str;
     if (!shown) { D.ink++; return { x0: 0, wd: 0, cy: cy, size: size }; }
     var off = EM.MO.slide(S.p, 54, 0.26);
     var wd = D.width(str, size);
     var x0 = cx - wd / 2, y0 = cy + size * 0.34;
 
     /* the ruler it is measured against */
-    D.span(x0, x0 + wd, y0 + 46, cols, a * 0.45, Math.round(wd) + ' px');
-    D.mono(shown, cx + off, y0, size, cols, 'center', a * (0.35 + 0.65 * ph.letter));
-    EM.MO.caret(D, shown, cx + off - D.width(shown, size) / 2, y0, size, cols, a * 0.8, S.t);
+    if (EM.debugView) D.span(x0, x0 + wd, y0 + 46, cols, a * 0.45, Math.round(wd) + ' px');
+    D.mono(shown, cx + off, y0, size, cols, 'center', a);
     /* STRUCK: every crack in the word is a note that was actually played while
        this line was on screen. Its position across the word is that note's
        PITCH, and the crack's length is that note's VELOCITY. Nothing here is
@@ -230,8 +229,8 @@
         var qa = kv * (0.62 + 0.30 * S.world.breath);
         var qx = EM.W / 2, qy = EM.H / 2 + 120;
         D.mono('STATE  EMPTY', qx, qy, 30, P.trace, 'center', qa);
-        D.mono('SELF-TEST  OK', qx, qy + 44, 22, P.pad, 'center', qa);
-        D.mono('no fault found', qx, qy + 82, 14, P.silk, 'center', qa * 0.85);
+        D.mono('RESET COMPLETE', qx, qy + 44, 22, P.pad, 'center', qa);
+        D.mono('waiting for a connection', qx, qy + 82, 14, P.silk, 'center', qa * 0.85);
       }
     }
   }
@@ -548,8 +547,9 @@
       D.mono(i === 1 ? 'k = ' + jit.toFixed(3) : (i === 0 ? 'n = 615' : 'y = kx'), x + 16, y + 66, 13, P.silk, 'left', a * 0.8);
       if (i < 2) {
         D.wire(x + w, y + 55, boxes[i + 1][0], y + 55, P.trace, 1.2, a * 0.8);
-        var k = C.saw(S.t * 0.6 + i * 0.33);
-        D.disc(C.lerp(x + w, boxes[i + 1][0], k), y + 55, 4, P.paper, a);
+        var k = C.saw(S.K.notePhase(S.t) + i * 0.33);
+        D.disc(C.lerp(x + w, boxes[i + 1][0], k), y + 55,
+          3 + 4 * S.velocity / 127, P.paper, a);
       }
     }
     chrome(D, S, {});
@@ -584,21 +584,22 @@
   function purr(D, S, o) {
     var P = pal(S), a = 0.6 * S.world.breath + 0.25;
     var mid = EM.H / 2;
-    /* 25 Hz is far too fast to draw as a wave, so it is drawn as a RULE:
-       the grid itself shakes, and the frequency is printed. */
-    var shake = 2.6 * S.world.love + 1.2;
+    /* The purr waveform follows MIDI phase; its amplitude responds to the
+       pulse and velocity, without claiming a measured physical frequency. */
+    var shake = 1.2 + 2.6 * S.world.love + 4 * S.beatPulse;
+    var phase = S.K.notePhase(S.t), weight = 0.65 + 0.6 * S.velocity / 127;
     var pts = [];
     for (var i = 0; i <= 300; i++) {
       var x = 140 + (EM.W - 280) * i / 300;
-      pts.push([x, mid - Math.sin(i / 300 * TAU * 26) * 34]);
+      pts.push([x, mid - Math.sin(i / 300 * TAU * 26 + phase * TAU) * 34 * weight]);
     }
     D.poly(pts, P.trace, 1.4, a);
     for (var g = 0; g < 14; g++) {
       var yy = 120 + g * ((EM.H - 260) / 13);
       D.line(140, yy + C.sym(g + Math.floor(S.t * 25), 61) * shake, EM.W - 140, yy, P.dim, 1, a * 0.35);
     }
-    D.mono('25.0 Hz   purr', 140, mid + 90, 14, P.trace, 'left', a);
-    D.mono('grid displacement ' + shake.toFixed(2) + ' px', 140, mid + 114, 12, P.silk, 'left', a * 0.8);
+    if (EM.debugView) D.mono('grid displacement ' + shake.toFixed(2) + ' px',
+      140, mid + 114, 12, P.silk, 'left', a * 0.8);
     chrome(D, S, {});
   }
 

@@ -73,32 +73,27 @@
     M.chrome(D, S, {});
   }
 
-  /* ③ a warm mark left on the board, cooling, with the real temperature */
+  /* ③ a fading signal after the connection is lost */
   function coolMark(D, S, o) {
-    var P = pal(S), a = 0.6 * S.world.breath + 0.25;
-    var cx = EM.W / 2 - 120, cy = EM.H / 2 - 10;
-    var age = S.t - S.cue.t;
-    var temp = 36.5 * Math.exp(-age / 5.5);
-    D.disc(cx, cy, 60, P.pad, 0.16 + 0.5 * Math.exp(-age / 4));
-    D.circle(cx, cy, 60, C.mix(P.pad, P.dim, 1 - Math.exp(-age / 6)), 1.4, a);
-    D.circle(cx, cy, 60 * (1 + 0.4 * C.smooth(C.clamp(age / 3, 0, 1))), P.dim, 1, a * 0.4);
-    /* thermometer: the reading falls, because the heat really does */
-    var tx = cx + 250, ty0 = cy - 130, ty1 = cy + 130;
-    D.rect(tx - 7, ty0, 14, ty1 - ty0, P.silk, 1, a * 0.7);
-    var lvl = C.clamp(temp / 36.5, 0, 1);
-    D.fillRect(tx - 4, ty1 - (ty1 - ty0) * lvl, 8, (ty1 - ty0) * lvl,
-      C.mix(P.alarm, P.trace, lvl), a * 0.9);
-    D.mono(temp.toFixed(1) + ' °C', tx + 18, ty1 - (ty1 - ty0) * lvl + 4, 13, P.pad, 'left', a);
-    D.mono('cooling', tx + 18, ty1 + 24, 12, P.silk, 'left', a * 0.7);
+    var P = pal(S), age = S.t - S.cue.t;
+    var cx = EM.W / 2, cy = 414, beat = S.K.pulse(S.t, 0.3, 0.075);
+    var weight = S.velocity / 127, warmth = Math.exp(-age / 1.8);
+    var R = 96 + beat * 24 + weight * 12;
+    D.disc(cx, cy, R, P.love, warmth * 0.16);
+    for (var i = 0; i < 5; i++)
+      D.circle(cx, cy, R + i * 18 + age * 12, C.mix(P.love, P.dim, 1 - warmth),
+        1.2, warmth * (0.65 - i * 0.10));
+    D.dash(cx - 230, cy, cx + 230, cy, P.dim, 1.2, [7, 10], 0.45);
+    D.mono('SIGNAL LOST', cx, cy + 190, 19, P.dim, 'center', 0.72);
     M.chrome(D, S, {});
   }
-
   /* ④ the same figure repeated, each copy weaker — the echo */
   function echoes(D, S, o) {
     var P = pal(S), a = 0.62 * S.world.breath + 0.2;
     var cx = EM.W / 2, cy = EM.H / 2 - 10;
     for (var k = 0; k < 6; k++) {
-      var sc = 1 - k * 0.13, al = a * Math.pow(0.62, k);
+      var sc = (1 - k * 0.13) * (0.84 + S.velocity / 127 * 0.22 + S.beatPulse * 0.06);
+      var al = a * Math.pow(0.62, k);
       if (al < 0.03) break;
       D.poly([[cx - 200 * sc, cy - 130 * sc], [cx + 120 * sc, cy - 130 * sc],
         [cx + 200 * sc, cy + 20 * sc], [cx - 60 * sc, cy + 140 * sc]],
@@ -116,6 +111,8 @@
     var x = 320, y = EM.H / 2 - 10;
     D.mono('> you', x, y - 70, 16, P.silk, 'left', a * 0.8);
     D.mono('>> undefined', x, y - 24, 20, P.alarm, 'left', a);
+    D.fillRect(x + 210 + S.K.notePhase(S.t) * 10, y - 41, 11,
+      20 + 6 * S.beatPulse, P.alarm, a * 0.8);
     D.line(x, y - 8, x + 460, y - 8, P.alarm, 1, a * 0.5);
     D.mono('reference held at 0x00000000', x, y + 34, 13, P.silk, 'left', a * 0.7);
     /* the frame is almost empty on purpose: this one barely is anything */
@@ -239,140 +236,61 @@
     M.chrome(D, S, {});
   }
 
-  /* ==========================================================================
-     THE FACTORY.
-
-     EXECUTION is sung eighteen times. Eighteen copied slides would read as
-     eighteen unrelated pictures; eighteen unrelated inventions would read as
-     noise. So it is one parameterised machine: `heat` rises 0 -> 1 across the
-     run and each step destroys a DIFFERENT mechanism, while a constant layer
-     (the word, the counter, the sixteen progress dots) is superimposed on all
-     of them. That is what makes it read as one entity coming apart.
-     ======================================================================== */
+  /* The repeated chant uses fixed, separated positions. Words accumulate
+     in lyric order, and broken tethers show the consequence of each call.
+     The final shot fills a denser field after the original interface is gone. */
+  /* Both execution fields use deterministic, separated positions. */
+  function executionChant(D, S, dim) {
+    var P = pal(S), cs = EM.Lyrics.cues, words = [];
+    for (var i = 0; i < cs.length && cs[i].t <= S.t; i++)
+      if (/^xs\.r\d+$/.test(cs[i].scene)) words.push(cs[i]);
+    var active = /^xs\.r\d+$/.test(S.scene);
+    for (var j = 0; j < words.length; j++) {
+      var pos = EM.executionPlacement(j, false), age = S.t - words[j].t;
+      var arrive = C.smooth(C.clamp(age / 0.16, 0, 1));
+      var now = active && words[j].scene === S.scene;
+      var impact = now ? S.beatPulse * S.velocity / 127 : 0;
+      var size = pos.size * (1 + impact * 0.10);
+      var ink = C.mix(P.alarm, P.paper, C.clamp(age / 1.3, 0, 0.65));
+      var a = (now ? 0.95 : 0.55) * (0.25 + 0.75 * arrive) * (dim || 1);
+      var c = D.ctx;
+      c.save(); c.translate(pos.x, pos.y);
+      c.rotate(pos.angle);
+      D.mono('EXECUTION', 0, size * 0.3, size, ink, 'center', a);
+      if (now) {
+        D.line(-112, size * 0.52, 112, size * 0.52, P.alarm, 1.6, a * impact);
+        D.disc(-124, size * 0.52, 2 + impact * 3, P.paper, a);
+      }
+      c.restore();
+    }
+    return words.length;
+  }
+  EM.drawExecutionMemory = function (D, S) {
+    if (S.act !== 'xs' || /^xs\.r\d+$/.test(S.scene) ||
+        S.t < EM.Lyrics.byScene['xs.r01'].t || /trapped/i.test(S.text)) return;
+    executionChant(D, S, 0.24);
+  };
   function execPlate(step, total) {
-    var heat = total > 1 ? step / (total - 1) : 0;
-    var variant = step % 16;
     return function (D, S, o) {
-      var P = pal(S), a = 0.7 * S.world.breath + 0.3;
-      var cx = EM.W / 2, cy = EM.H / 2 - 6;
-      /* the eighteen executions were driven by the line's progress alone — a
-         picture of a strike, not a strike. Now every one of them is also
-         struck by the note that is sounding: the impact's size is that note's
-         velocity and its position across the word is that note's pitch. */
-      var n0 = S.K.sinceNote(S.t);
-      var noteHit = n0 ? Math.exp(-n0.dt / 0.07) * (n0.vel / 127) : 0;
-      var hit = Math.max(C.env(S.p, 0.06, 0.5), noteHit * 0.9);
-      var word = 'EXECUTION';
-      /* it GROWS with the step: twelve identical shots is a chant nobody can
-         count — the twelfth has to be measurably bigger, redder and more crowded
-         than the first, which is also what makes the nineteenth (finalExec) read
-         as the next step instead of a repeat of the thirteenth. */
-      var size = 46 + 28 * heat;
-      var wd = D.width(word, size);
-      var x0 = cx - wd / 2, y0 = cy + size * 0.34;
-      var col = C.mix(P.paper, P.alarm, 0.35 + 0.65 * heat);
-      /* EVERY EXECUTION STAYS WHERE IT LANDED. The word is said again and the
-         screen keeps the one said before, so the count grows and the frame fills
-         up — SCATTERED, never stacked: each one's place, size and tilt come from
-         hash01 of its own number in the running order, so a seek restores the
-         same field. The one being said NOW is the big one in the middle; the
-         nineteenth (finalExec) is what this becomes when the machine stops
-         counting and simply does not stop. */
-      var execs = 0, csq = EM.Lyrics.cues;
-      for (var q = 0; q < csq.length && csq[q].t <= S.t; q++) {
-        if (csq[q].text === 'EXECUTION') execs++;
+      var P = pal(S), hit = S.beatPulse * S.velocity / 127;
+      var isChant = /^xs\.r\d+$/.test(S.scene);
+      var n = isChant ? executionChant(D, S, 1) : 1;
+      if (!isChant) {
+        var size = 84 + hit * 15;
+        D.mono('EXECUTION', EM.W / 2, 442 + size * 0.3,
+          size, P.alarm, 'center', 0.9);
       }
-      for (var e = 1; e < execs; e++) {
-        var ex = 110 + C.hash01(e, 1451) * (EM.W - 240);
-        var ey = 120 + C.hash01(e, 1453) * (EM.H - 250);
-        var es = size * (0.62 + 0.55 * C.hash01(e, 1457));
-        var ec = D.ctx;
-        ec.save();
-        ec.translate(ex, ey);
-        ec.rotate(C.sym(e, 1459) * 0.20);
-        D.mono(word, 0, 0, es, C.mix(P.alarm, P.paper, C.hash01(e, 1461) * 0.75),
-          'center', a * 0.78);
-        ec.restore();
+      // Broken tethers show the consequence of each call, without fake counters.
+      for (var k = 0; k < 9; k++) {
+        var sp = EM.shelfPos(k), cut = C.clamp(n / 16, 0, 1);
+        var x0 = EM.W / 2 + (sp[0] - EM.W / 2) * (0.15 + cut * 0.30);
+        var y0 = 414 + (sp[1] - 414) * (0.15 + cut * 0.30);
+        D.dash(x0, y0, sp[0], sp[1], P.alarm, 1, [4, 12],
+          (0.10 + hit * 0.18) * (1 - cut * 0.45));
       }
-      /* and every execution leaves the board smaller than it found it: the count
-         is the running order's own, read off the cue table, not a decoration */
-      var burned = Math.min(615, execs * 34);
-      D.mono('joints remaining  ' + (615 - burned) + ' / 615', cx, cy - 186, 13,
-        P.silk, 'center', a * 0.9);
-
-      /* --- the mechanism this step destroys --- */
-      var g;
-      if (variant === 0) {                                  /* the seam splits */
-        D.line(cx - 420, cy - 40 + hit * 20, cx + 420, cy - 40 - hit * 20, col, 2, a);
-      } else if (variant === 1) {                           /* a grid is rastered */
-        for (g = 0; g <= 14; g++) {
-          var xx = cx - 420 + g * 60;
-          D.line(xx, cy - 150, xx + C.sym(g + step, 5) * 40 * heat, cy + 150, col, 1, a * 0.6);
-        }
-      } else if (variant === 2) {                           /* a circle is broken */
-        var brk = 0.35 + 0.6 * heat;
-        for (g = 0; g < 10; g++) {
-          if (g / 10 < brk) continue;
-          D.arc(cx, cy, 170, g * TAU / 10 + 0.06, (g + 1) * TAU / 10 - 0.06, col, 2, a);
-        }
-      } else if (variant === 3) {                           /* bolts in a ring */
-        for (g = 0; g < 16; g++) {
-          var th = g * TAU / 16;
-          D.disc(cx + Math.cos(th) * 230, cy + Math.sin(th) * 150, 3 + 4 * hit, col, a * 0.9);
-        }
-      } else if (variant === 4) {                           /* the stamp comes down */
-        var sq = C.smooth(hit);
-        D.rect(cx - 250 * sq, cy - 110 * sq, 500 * sq, 220 * sq, col, 2.4, a);
-      } else if (variant === 5) {                           /* the word is struck out */
-        D.line(x0 - 20, cy - 6, x0 + wd + 20, cy - 6, P.alarm, 3, a * (0.4 + 0.6 * heat));
-      } else if (variant === 6) {                           /* the frame is sheared */
-        D.poly([[cx - 430, cy - 150], [cx + 400 + heat * 90, cy - 150],
-          [cx + 430, cy + 150], [cx - 400 - heat * 90, cy + 150]], col, 1.4, a * 0.7, true);
-      } else if (variant === 7) {                           /* the rulers collapse in */
-        D.span(cx - 460 + heat * 200, cx + 460 - heat * 200, cy + 150, col, a * 0.8, 'span');
-      } else if (variant === 8) {                           /* the counter starts */
-        D.mono('CALL ' + (step + 1) + ' / ' + total, cx - 460, cy - 190, 16, col, 'left', a);
-      } else if (variant === 9) {                           /* everything is halved */
-        for (g = 0; g < 8; g++) D.line(cx - 400 + g * 114, cy + 120, cx - 400 + g * 114, cy + 120 - 40 * (1 - heat), col, 1.4, a * 0.7);
-      } else if (variant === 10) {                          /* the seams separate */
-        for (g = 0; g < 6; g++) {
-          D.line(cx - 400, cy - 90 + g * 36, cx - 400 + 800 * (1 - heat * 0.7), cy - 90 + g * 36, col, 1, a * 0.55);
-        }
-      } else if (variant === 11) {                          /* a hole is punched */
-        var c = D.ctx;
-        c.save(); c.globalCompositeOperation = 'destination-out';
-        c.beginPath(); c.arc(cx + (variant - 8) * 40, cy, 40 + 90 * heat, 0, TAU); c.fill();
-        c.restore(); D.ink++;
-      } else if (variant === 12) {                          /* it is rotated off true */
-        D.line(cx - 380, cy + 30 + heat * 120, cx + 380, cy + 30 - heat * 120, col, 1.6, a * 0.8);
-      } else if (variant === 13) {                          /* the mechanism burns out */
-        D.disc(cx, cy, 120 + 60 * heat, C.mix(P.alarm, P.bg, 0.55), a * 0.5 * (1 - heat * 0.4));
-      } else if (variant === 14) {                          /* only the chassis left */
-        D.rect(cx - 430, cy - 150, 860, 300, col, 1.2, a * 0.4);
-      } else {                                              /* the word alone */
-        a *= 1;
-      }
-
-      /* --- the constant layer: the same on all sixteen --- */
-      D.mono(word, cx, y0, size, col, 'center', a);
-      if (n0) {
-        var pk = C.clamp((n0.pitch - EM.MIDI.pitchLo) /
-          Math.max(1, EM.MIDI.pitchHi - EM.MIDI.pitchLo), 0, 1);
-        var hx = cx - wd / 2 + wd * (0.05 + 0.90 * pk);
-        D.line(hx, cy - size * 0.62, hx, cy + size * 0.42, P.paper,
-          1 + 3 * noteHit, a * (0.25 + 0.75 * noteHit));
-        D.mono(n0.vel + '', hx, cy + size * 0.42 + 16, 10, P.paper, 'center', a * noteHit);
-      }
-      var dots = total;
-      for (g = 0; g < dots; g++) {
-        var dx = cx - (dots - 1) * 9 + g * 18;
-        D.disc(dx, cy + 168, g <= step ? 3.2 : 2, g <= step ? col : P.dim, g <= step ? a : a * 0.4);
-      }
+      D.line(28, 66, EM.W - 28, 66, P.alarm, 2, 0.12 + hit * 0.32);
+      D.line(28, EM.H - 68, EM.W - 28, EM.H - 68, P.alarm, 2, 0.12 + hit * 0.32);
       M.chrome(D, S, {});
-      /* the label hangs under the word, not on the note rail: EM.H-96 is
-         exactly where the rail's own baseline runs, so the two were written on
-         top of each other in every labelled shot */
-      if (o && o.label) D.mono(o.label, cx, cy + 86, 13, P.silk, 'center', a * 0.7);
     };
   }
 
@@ -403,21 +321,26 @@
 
   /* ---------- ACT VI · love ----------------------------------------------- */
   function molecule(D, S, o) {
-    var P = pal(S), a = 0.6 * S.world.breath + 0.3;
-    var cx = EM.W / 2, cy = EM.H / 2 - 10;
-    var nodes = [[-90, -40], [10, 0], [110, -50], [130, 60], [0, 90], [-120, 60]];
-    var links = [[0, 1], [1, 2], [1, 3], [3, 4], [3, 5], [5, 0]];
-    for (var i = 0; i < links.length; i++) {
-      var A = nodes[links[i][0]], B = nodes[links[i][1]];
-      D.line(cx + A[0] * 1.6, cy + A[1] * 1.6, cx + B[0] * 1.6, cy + B[1] * 1.6, P.trace, 1.6, a * 0.85);
+    var P = pal(S), cx = EM.W / 2, cy = 394;
+    var phase = S.K.notePhase(S.t), weight = S.velocity / 127;
+    var R = 13.5 * (0.9 + 0.12 * weight + 0.11 * S.beatPulse);
+    var nodes = [], i;
+    // Love first appears as a network, then resolves into a heart.
+    for (i = 0; i <= 100; i++) {
+      var th = i / 100 * TAU, sn = Math.sin(th);
+      nodes.push([cx + 16 * sn * sn * sn * R,
+        cy - (13 * Math.cos(th) - 5 * Math.cos(2 * th) -
+          2 * Math.cos(3 * th) - Math.cos(4 * th)) * R]);
     }
-    for (i = 0; i < nodes.length; i++) {
-      var r = i === 1 ? 15 : 11;
-      D.circle(cx + nodes[i][0] * 1.6, cy + nodes[i][1] * 1.6, r, i === 1 ? P.pad : P.trace, 1.6, a);
-      D.mono(i === 1 ? 'C' : ['H', 'O', 'H', 'H', 'O'][i % 5], cx + nodes[i][0] * 1.6, cy + nodes[i][1] * 1.6 + 5, 13,
-        i === 1 ? P.pad : P.trace, 'center', a);
+    D.poly(nodes, P.love, 2.2, 0.82, true);
+    for (i = 0; i < 12; i++) {
+      var at = Math.floor((i / 12 + phase / 12) * 100) % 100, p = nodes[at];
+      D.circle(p[0], p[1], 3 + S.beatPulse * 3, P.paper, 1.2, 0.75);
+      if (i % 3 === 0) {
+        var to = nodes[(at + 37) % 100];
+        D.dash(p[0], p[1], to[0], to[1], P.love, 1, [3, 10], 0.20);
+      }
     }
-    D.mono('structure: C6H' + (6 + S.repeat) + 'O2   (approx.)', cx, cy + 230, 13, P.silk, 'center', a * 0.8);
     M.chrome(D, S, {});
   }
 
@@ -446,7 +369,7 @@
       '   (one per note)', cx, cy + 148, 13, P.silk, 'center', a * 0.8);
     D.mono('love  =  lim  1/(1-λ)   as  λ -> 1', cx, cy + 30, 26, P.paper, 'center', a);
     D.line(cx - 300, cy + 52, cx + 300, cy + 52, P.paper, 1.4, a * 0.7);
-    D.mono('(evaluates to: undefined)', cx, cy + 92, 15, P.alarm, 'center', a * 0.9);
+    D.mono('diverges; no finite answer', cx, cy + 92, 15, P.alarm, 'center', a * 0.9);
     M.chrome(D, S, {});
   }
 
@@ -486,7 +409,7 @@
     }
     D.poly(pts, P.paper, 2.2 * press, a * 0.85);
     D.mono('(no equation required)', cx, cy + size * 0.46 + 40, 15, P.silk, 'center', a * 0.85);
-    D.mono('the hand is listening:  press ' + S.velocity + ' / 127',
+    if (EM.debugView) D.mono('the hand is listening:  press ' + S.velocity + ' / 127',
       cx, cy + size * 0.46 + 62, 13, P.paper, 'center', a * 0.8);
     M.chrome(D, S, {});
   }
@@ -583,99 +506,47 @@
 
   /* ---------- the last shot ----------------------------------------------- */
   function finalExec(D, S, o) {
-    var P = pal(S), a = 0.75 * S.world.breath + 0.3;
-    var cx = EM.W / 2, cy = EM.H / 2 - 6;
-    var QUIET = 1.0;                           /* the lone word, before it starts */
-    var rt0 = 1.9;                             /* seconds into the shot */
-    var since = S.t - S.cue.t;
-    var RATE = 2.55, FROM = 0.0;
-
-    if (since < QUIET) {
-      /* the nineteenth, quiet: one word, on the origin of an empty board */
-      var size = 116, wd = D.width('EXECUTION', size);
-      D.mono('EXECUTION', cx, cy + size * 0.34, size, P.paper, 'center', a);
-      D.line(cx - wd, cy + size * 0.34 + 20, cx + wd, cy + size * 0.34 + 20, P.dim, 1, a * 0.35);
-      /* crosshair: the centre is being measured, not decorated — and a
-         measurement you cannot read is not a measurement. The reticle stays on
-         the origin, where the word is written over it; the LABEL is hung off it
-         into the one clear corner of the shot, with a leader, instead of being
-         typed across the middle of the word. */
-      D.line(cx - 52, cy, cx - 14, cy, P.alarm, 1.6, a * 0.95);
-      D.line(cx + 14, cy, cx + 52, cy, P.alarm, 1.6, a * 0.95);
-      D.line(cx, cy - 52, cx, cy - 14, P.alarm, 1.6, a * 0.95);
-      D.line(cx, cy + 14, cx, cy + 52, P.alarm, 1.6, a * 0.95);
-      D.circle(cx, cy, 9, P.alarm, 1.2, a * 0.8);
-      D.callout(cx, cy, cx + 152, cy + 116, 'origin (0,0)', P.alarm, a * 0.95, 13);
-
-    } else {
-      /* ---- THE MACHINE DOES NOT STOP AT NINETEEN ---------------------------
-         The nineteenth is written quietly on the origin, and then the machine
-         runs it again, and again, and does not stop: every one lands HOT (the
-         alarm colour) and cools to paper, the word written on the origin is
-         joined by more of them, and the count grows until the frame is nothing
-         else. The picture washes red on the beat while that happens — the alarm
-         is not a state the world is in, it is what this shot does.
-
-         All of it is a function of t: where the i-th word lands, how big it is,
-         how far it is tilted and how hot it still is come from hash01(i, salt),
-         so a seek restores the same screen and the same count. */
-      var BIRTH = QUIET, STEP = 0.055, CAP = 84;
-      var n = Math.min(CAP, Math.floor((since - BIRTH) / STEP) + 1);
-      var ramp = C.smooth(C.clamp((since - BIRTH) / 0.8, 0, 1));
-      var pulse = (0.12 + 0.34 * S.beatPulse) * ramp;
-      D.fillRect(0, 0, EM.W, EM.H, P.alarm, a * (0.04 + 0.15 * S.beatPulse) * ramp);
+    var P = pal(S), cx = EM.W / 2, cy = 414;
+    var since = S.t - S.cue.t, QUIET = 0.8, rt0 = 2.15;
+    var spread = C.smooth(C.clamp((since - QUIET) / 0.65, 0, 1));
+    if (spread < 1) {
+      D.mono('EXECUTION', cx, cy + 38, 116, P.paper, 'center', 1 - spread);
+      D.circle(cx, cy, 10 + 12 * S.beatPulse, P.alarm, 1.5, 1 - spread);
+    }
+    if (since >= QUIET) {
+      var STEP = 0.064, CAP = 84;
+      var n = Math.min(CAP, Math.floor((since - QUIET) / STEP) + 1);
+      var pulse = spread * (0.035 + 0.13 * S.beatPulse);
+      D.fillRect(0, 0, EM.W, EM.H, P.alarm, pulse);
       for (var i = 0; i < n; i++) {
-        var age = since - (BIRTH + i * STEP);
-        var cool = C.clamp(age / 0.55, 0, 1);            /* red … paper */
-        var al = a * (0.30 + 0.70 * C.smooth(C.clamp(age / 0.16, 0, 1)));
-        if (i === 0) {
-          /* the one that was written on the origin stays where it was written */
-          D.mono('EXECUTION', cx, cy + 116 * 0.34, 116, C.mix(P.alarm, P.paper, cool),
-            'center', al);
-          continue;
-        }
-        var size = 24 + 62 * C.hash01(i, 1457);
-        var ex = 70 + C.hash01(i, 1451) * (EM.W - 140);
-        var ey = 130 + C.hash01(i, 1453) * (EM.H - 260);
+        var age = since - QUIET - i * STEP, pos = EM.executionPlacement(i, true);
+        var arrive = C.smooth(C.clamp(age / 0.12, 0, 1));
+        var ink = C.mix(P.alarm, P.paper, C.clamp(age / 1.2, 0, 0.75));
         var c = D.ctx;
-        c.save();
-        c.translate(ex, ey);
-        c.rotate(C.sym(i, 1459) * 0.24);
-        D.mono('EXECUTION', 0, 0, size, C.mix(P.alarm, P.paper, cool), 'center', al);
+        c.save(); c.translate(pos.x, pos.y); c.rotate(pos.angle);
+        D.mono('EXECUTION', 0, pos.size * 0.3, pos.size, ink,
+          'center', (0.32 + 0.48 * arrive) * spread);
         c.restore();
       }
-      /* and the frame itself is under the alarm */
-      D.line(0, 0, EM.W, 0, P.alarm, 9, a * pulse);
-      D.line(0, EM.H, EM.W, EM.H, P.alarm, 9, a * pulse);
-      D.line(0, 0, 0, EM.H, P.alarm, 9, a * pulse);
-      D.line(EM.W, 0, EM.W, EM.H, P.alarm, 9, a * pulse);
+      D.rect(5, 5, EM.W - 10, EM.H - 10, P.alarm, 8,
+        spread * (0.18 + 0.5 * S.beatPulse));
     }
-
-    /* --- the replay ---------------------------------------------------------
-       The film is a pure function of t, so it can call itself. This is not a
-       recording and not a metaphor: it is a second evaluation of the same
-       function, and the verification proves it lands on identical frames. */
+    // Erasure restores the interface, not the missing person. The same chat
+    // starts again inside the execution field: the exit was another entry.
     S.replayFrom = S.cue.t + rt0;
     if (since >= rt0) {
-      var grow = C.smooth(C.clamp((since - rt0) / 1.1, 0, 1));
-      var iw = C.lerp(180, 980, grow), ih = iw * 9 / 16;
+      var grow = C.smooth(C.clamp((since - rt0) / 0.8, 0, 1));
+      var iw = C.lerp(320, 1050, grow), ih = iw * 9 / 16;
       var ix = cx - iw / 2, iy = cy - ih / 2;
-      var rt = EM.drawReplay(D, S, [ix, iy, iw, ih], RATE, FROM);
-
-      D.rect(ix - 8, iy - 8, iw + 16, ih + 16, P.trace, 1.4, a * 0.8);
-      D.mono('REPLAY · RUN 2', ix, iy - 18, 15, P.alarm, 'left', a);
-      D.mono('t = ' + rt.toFixed(2) + ' s of ' + FROM + ' s', ix + iw, iy - 18, 13, P.silk, 'right', a * 0.9);
-      D.mono('the same function, evaluated again', cx, EM.H - 116, 14, P.paper, 'center', a * 0.9);
-
-      /* the board is being written on again, and the counter says so */
-      D.mono('JOINTS  ' + S.jointsLive, cx - 470, 132, 14, P.pad, 'left', a * 0.9);
+      EM.drawReplay(D, S, [ix, iy, iw, ih], 2.55, 0);
+      D.rect(ix - 6, iy - 6, iw + 12, ih + 12, P.trace, 1.8, 0.85);
+      D.mono('RECONNECTING...', ix, iy - 18, 19, P.trace, 'left', grow);
+      D.fillRect(cx - 240, EM.H - 130, 480, 43, P.bg, grow * 0.94);
+      D.text('连接已重置。等待你的回应。', cx, EM.H - 100, 25,
+        P.paper, 'center', grow * 0.95);
     }
-
-    /* the verdict sits on top of all of it: the machine keeps reporting.
-       It lives above the caption band, not under it — at EM.H-120 it collided
-       with the band's own line and the outgoing shot's "movement n / 4". */
-    D.mono('state: EMPTY     exit: TAKEN', cx, EM.H - 164, 14, P.silk, 'center', a * 0.85);
-    M.chrome(D, S, {});
+    D.mono('Mili / world.execute(me);', 38, EM.H - 34, 14, P.silk, 'left', 0.62);
+    D.mono('AI-girls / ZipZipPipe', EM.W - 38, EM.H - 34, 13, P.silk, 'right', 0.62);
   }
 
   /* --- fill the instrumental stretches ------------------------------------
@@ -735,7 +606,8 @@
     var S2 = shallow(S, inside);
     EM.M[moves[idx][0]](D, S2, moves[idx][1] || {});
     c.restore();
-    /* the camera's own log line, so a movement with no motion is visible */
+    /* Camera diagnostics belong to the authoring view. */
+    if (EM.debugView) {
     var P0 = pal(S);
     D.mono('cam ' + cam + '  scale ' + shot.s.toFixed(2) +
       '  pan ' + Math.round(shot.x) + ',' + Math.round(shot.y),
@@ -749,6 +621,7 @@
     }
     D.mono('movement ' + (idx + 1) + ' / ' + n + '   ' + (moves[idx][3] || ''),
       EM.W / 2, EM.H - 112, 12, P.silk, 'center', 0.8);
+    }
   }
   /* a view of the same state with a different progress, so a sub-motive can be
      drawn at its own local entrance while the parent keeps its own clock */

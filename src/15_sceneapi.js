@@ -118,11 +118,16 @@
     var cue = S.cue;
     if (!cue) return;
 
+    // Hold the restored chat and warning field through the final audio frame.
+    // A normal lyric envelope would fade away the story's last image.
+    if (cue.scene === 'xs.final') { safe(cue.scene, D, S, 1); return; }
+
     var c = D.ctx;
 
     /* the outgoing shot */
     var pi = cue.i - 1;
-    if (pi >= 0 && L.cues[pi] && L.cues[pi].bleed) {
+    if (pi >= 0 && L.cues[pi] && L.cues[pi].bleed &&
+        !(EM.storyScenes && EM.storyScenes[L.cues[pi].scene])) {
       var out = Math.exp(-Math.max(0, t - cue.t) / 0.30);
       if (out > 0.01) {
         var on0 = beatWarp(D, S, 0.45);

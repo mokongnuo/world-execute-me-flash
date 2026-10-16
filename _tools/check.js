@@ -15,10 +15,11 @@ const { makeCtx } = require('./stub.js');
 global.window = global;
 const ROOT = path.join(__dirname, '..');
 const SRC = [
-  'assets/onsets.js', 'assets/waveform.js', 'assets/cues.js', 'assets/personas.js',
+  'assets/onsets.js', 'assets/waveform.js', 'assets/cues.js', 'assets/translation.js', 'assets/personas.js',
   'src/00_core.js', 'src/01_world.js', 'src/07_motion.js', 'src/10_draw.js', 'src/05_persona_grammar.js',
   'src/20_lyrics.js', 'src/15_sceneapi.js', 'src/30_world.js',
-  'src/35_motifs.js', 'src/36_motifs2.js', 'src/40_plates.js', 'src/50_selftest.js'
+  'src/35_motifs.js', 'src/36_motifs2.js', 'src/37_story.js', 'src/38_offers.js',
+  'src/39_identity.js', 'src/41_resolve.js', 'src/40_plates.js', 'src/50_selftest.js'
 ];
 for (const f of SRC) {
   const p = path.join(ROOT, f);
@@ -101,13 +102,7 @@ EM.plateFaults.length ? bad('plate faults: ' + JSON.stringify(EM.plateFaults.sli
 /* ---------- 5. determinism: same t, same call stream ---------- */
 console.log('\n-- 5. DETERMINISM (the seek-safety proof) --');
 function hashAt(t) {
-  const log = [];
-  const D = EM.newDraw(makeCtx(log));
-  const S = EM.drawWorldLayer(D, t);
-  EM.drawWorn(D, S);
-  EM.drawAbsence(D, S);
-  try { EM.drawSequence(D, t, S); } catch (e) { return 'THREW ' + e.message; }
-  EM.drawRegisters(D, S);
+  const log = frameLog(t);
   return crypto.createHash('sha1').update(log.join('|')).digest('hex');
 }
 const times = [];
@@ -402,7 +397,10 @@ for (const c of L.cues) {
   const t = c.t + Math.max(0.05, c.dur * 0.5);
   const S = EM.state(t);
   const D = EM.newDraw(makeCtx([]));
-  try { EM.drawWorn(D, S); } catch (e) { /* reported elsewhere */ }
+  try {
+    if (EM.hasStoryScene(S)) EM.drawStoryScene(D, S);
+    else EM.drawWorn(D, S);
+  } catch (e) { /* reported elsewhere */ }
   if (typeof S.subjectScale !== 'number') continue;
   (byFace[c.persona] = byFace[c.persona] || []).push(S.subjectScale);
 }
@@ -428,12 +426,22 @@ function frameLog(t) {
   const log = [];
   const D = EM.newDraw(makeCtx(log));
   const S = EM.drawWorldLayer(D, t);
-  EM.drawGrammar(D, S, { cx: EM.W / 2, cy: EM.H / 2 - 10, R: 300 });
-  EM.drawWorn(D, S);
-  try { EM.drawSequence(D, t, S); } catch (e) { /* reported in section 3 */ }
+  if (!EM.hasStoryScene(S)) {
+    EM.drawGrammar(D, S, { cx: EM.W / 2, cy: EM.H / 2 - 10, R: 300 });
+    EM.drawCodeWall(D, S);
+    EM.drawWorn(D, S);
+  }
+  if (!EM.storyOwnsShot(t)) EM.drawLyricImage(D, S);
+  EM.drawStandingNine(D, S);
+  EM.drawExecutionMemory(D, S);
+  if (!EM.storyOwnsShot(t)) {
+    try { EM.drawSequence(D, t, S); } catch (e) { /* reported in section 3 */ }
+  }
+  EM.drawStoryScene(D, S);
+  EM.drawAbsence(D, S);
   EM.drawBootChat(D, S);
   EM.drawTrapped(D, S);
-  EM.drawRegisters(D, S);
+  if (EM.debugView) EM.drawRegisters(D, S);
   EM.drawLyric(D, S);
   EM.M.noteRail(D, S, EM.RAIL[S.act] || 'ticks');
   EM.drawFrame(D, S);
@@ -476,8 +484,11 @@ function shotLog(t) {
   const log = [];
   const D = EM.newDraw(makeCtx(log));
   const S = EM.state(t);
-  try { EM.drawWorn(D, S); } catch (e) { /* reported elsewhere */ }
-  try { EM.drawSequence(D, t, S); } catch (e) { /* reported in section 3 */ }
+  if (EM.hasStoryScene(S)) EM.drawStoryScene(D, S);
+  else {
+    try { EM.drawWorn(D, S); } catch (e) { /* reported elsewhere */ }
+    try { EM.drawSequence(D, t, S); } catch (e) { /* reported in section 3 */ }
+  }
   return log;
 }
 function textsAt(t) {
@@ -494,7 +505,7 @@ const wordsOf = (s) => norm(s).split(' ').filter(Boolean);
    window is tight on purpose — the suite's "movement n / 4" label sits 22 px
    below it and the rail's note count 16 px below that, and counting either of
    those as a caption produced a page of false positives the first time. */
-const BAND_LO = EM.H - 148, BAND_HI = EM.H - 122;
+const BAND_LO = EM.H - 166, BAND_HI = EM.H - 142;
 function bandRow(t) {
   return textsAt(t).filter((it) => it.y > BAND_LO && it.y < BAND_HI && it.x > 300 && it.x < 1300);
 }
@@ -514,7 +525,10 @@ function subjectScales() {
     const t = c.t + Math.max(0.05, c.dur * 0.5);
     const S = EM.state(t);
     const D = EM.newDraw(makeCtx([]));
-    try { EM.drawWorn(D, S); } catch (e) { /* reported elsewhere */ }
+    try {
+      if (EM.hasStoryScene(S)) EM.drawStoryScene(D, S);
+      else EM.drawWorn(D, S);
+    } catch (e) { /* reported elsewhere */ }
     out.push(typeof S.subjectScale === 'number' ? S.subjectScale : null);
   }
   return out;
@@ -621,7 +635,8 @@ console.log('\n-- 16. 字幕与 cue 表逐毫秒一致 (⑮) --');
   let notPrefix = 0, notFinished = 0;
   const bandFaults = [];
   for (const c of L.cues) {
-    if (c.held || EM.subjectScene[c.scene] || c.t >= EM.AUDIO_END) continue;
+    if (c.held || c.text.charAt(0) === '(' || c.t >= EM.AUDIO_END ||
+        (EM.subjectScene[c.scene] && !EM.storyOwnsShot(c.t + 0.02)) || EM.storySubject[c.scene]) continue;
     const want = norm(c.text);
     const early = bandRow(c.t + 0.02).map(function (it) { return norm(it.str); }).join(' ').trim();
     if (early && want.indexOf(early) !== 0) {
@@ -679,7 +694,8 @@ console.log('\n-- 17. 文字不撒谎 (⑯) --');
   for (const c of L.cues) {
     if (c.held || c.t >= EM.AUDIO_END) continue;
     const want = norm(c.text);
-    const isSubject = !!(EM.subjectScene && EM.subjectScene[c.scene]);
+    const isSubject = !!((EM.subjectScene && EM.subjectScene[c.scene] &&
+      !EM.storyOwnsShot(c.t + 0.02)) || EM.storySubject[c.scene]);
     for (const f of [0.5, 0.92]) {
       const t = c.t + Math.max(0.02, c.dur * f);
       if (t >= EM.AUDIO_END) continue;
@@ -738,6 +754,48 @@ console.log('\n-- 17. 文字不撒谎 (⑯) --');
     warn('the machine names ' + far.length + ' words before the song reaches them — furthest "' +
       far[0] + '" leads its line by ' + ahead[far[0]].toFixed(1) + ' s  (' + far.slice(0, 6).join(', ') + ')');
   } else ok('nothing on screen names a word the song has not reached');
+}
+
+console.log('\n-- 18. STORY CONTINUITY AND COMPOSITION --');
+{
+  const translations = EM.LYRIC_CN || {};
+  if (Object.keys(translations).length) {
+    const missing = L.cues.filter(c => c.text && c.text[0] !== '(' && !translations[c.scene]);
+    missing.length ? bad('Chinese subtitles missing for ' + missing.map(c => c.scene).join(', '))
+      : ok('every sung cue has a Chinese subtitle on the original lyric clock');
+  }
+  const a = EM.fragmentState(121.2), b = EM.fragmentState(123.5);
+  a && b && a.count >= 500 && b.count >= a.count
+    ? ok('the fragment field stays full across the conditional and its consequence')
+    : bad('the memory field resets or disappears between adjacent lines');
+  const boxes = Array.from({ length: 16 }, (_, i) => {
+    const p = EM.executionPlacement(i, false);
+    const size = p.size * 1.10, w = size * 9 * 0.62, h = size * 1.2;
+    const bw = w * Math.cos(p.angle) + h * Math.abs(Math.sin(p.angle));
+    const bh = h * Math.cos(p.angle) + w * Math.abs(Math.sin(p.angle));
+    return { l: p.x - bw / 2, r: p.x + bw / 2,
+      t: p.y - bh / 2, b: p.y + bh / 2 };
+  });
+  let overlaps = 0;
+  for (let i = 0; i < boxes.length; i++) for (let j = 0; j < i; j++) {
+    const a = boxes[i], b = boxes[j];
+    if (a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b) overlaps++;
+  }
+  overlaps === 0 && boxes.every(b => b.l >= 25 && b.r <= EM.W - 25 && b.t >= 70 && b.b < 740)
+    ? ok('all sixteen chant words have separate, visible bounds at peak musical scale')
+    : bad('the chant words overlap or reach the subtitle area');
+  const seam = L.byScene['xs.trappedah'].t;
+  const before = EM.trappedMotion(seam - 0.0001), after = EM.trappedMotion(seam + 0.0001);
+  const onsetTimes = EM.clock.notesBetween(173.643, 176.5).map(n => n.ms);
+  const jumps = onsetTimes.filter(t => Math.abs(EM.trappedMotion(t + 0.0001).angle -
+    EM.trappedMotion(t - 0.0001).angle) > 0.01);
+  const visible = [seam - 0.001, seam + 0.001].every(t => {
+    const log = []; EM.drawTrapped(EM.newDraw(makeCtx(log)), EM.state(t));
+    return log.some(s => s.startsWith('ft(TRAPPED,'));
+  });
+  visible && Math.abs(before.angle - after.angle) < 0.01 && jumps.length === 0
+    ? ok('TRAPPED stays visible at the lyric seam and rotates continuously at note onsets')
+    : bad('TRAPPED vanishes at its seam or jumps backwards at a note');
 }
 
 console.log('\n' + '='.repeat(78));
